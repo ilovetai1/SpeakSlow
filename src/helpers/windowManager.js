@@ -1,5 +1,38 @@
 const { BrowserWindow } = require("electron");
 const path = require("path");
+const { execFile } = require("child_process");
+const {
+  INDICATOR_WIDTH,
+  INDICATOR_HEIGHT,
+  INDICATOR_MARGIN_BOTTOM,
+  FRONTMOST_WINDOW_JXA,
+  parseFrontmostWindowResult,
+  createIndicatorPositioner,
+} = require("./indicatorPlacement");
+
+// 用 JXA（osascript -l JavaScript）取得目前前景應用程式的最上層一般視窗 bounds。
+// CGWindowBounds 與 Electron 的 screen 座標同為「全域、左上原點」座標系，可直接
+// 餵給 screen.getDisplayMatching()。失敗（含逾時、非法輸出）一律 reject，不做任何 fallback。
+function getFrontmostWindowBoundsViaJXA() {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "osascript",
+      ["-l", "JavaScript", "-e", FRONTMOST_WINDOW_JXA],
+      { timeout: 1500 },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error("執行 JXA 取得前景視窗失敗：" + (stderr || error.message)));
+          return;
+        }
+        try {
+          resolve(parseFrontmostWindowResult(stdout));
+        } catch (err) {
+          reject(err);
+        }
+      }
+    );
+  });
+}
 
 class WindowManager {
   constructor(databaseManager = null) {
@@ -14,6 +47,22 @@ class WindowManager {
     this.isMini = false; // 視窗目前是否為迷你尺寸（渲染端重載後用來重新同步）
     this.commandMode = false; // 操作模式（主行程鏡像，給錄音指示器藥丸用）
     this._userOpacity = 1; // 使用者設定的視窗透明度（迷你變形時要還原成這個，而非寫死 1）
+
+    // TypeLess 指示器定位器：每次顯示前重新取得前景視窗所在螢幕並重新定位（僅 darwin 用，
+    // 見 showTypelessIndicator()）。任何失敗都不阻礙錄音——照現有位置顯示。
+    this._typelessIndicatorPositioner = createIndicatorPositioner({
+      getFrontmostBounds: () => getFrontmostWindowBoundsViaJXA(),
+      getDisplayMatching: (bounds) => {
+        const { screen } = require("electron");
+        return screen.getDisplayMatching({
+          x: Math.round(bounds.x),
+          y: Math.round(bounds.y),
+          width: Math.round(bounds.width),
+          height: Math.round(bounds.height),
+        });
+      },
+      logError: (message) => console.error(message), // indicatorPlacement.js 傳入的訊息已含 [typeless-indicator] 前綴
+    });
   }
 
   // 設定視窗透明度（0.3~1）；迷你 / 一般面板共用
@@ -384,19 +433,22 @@ class WindowManager {
       return this.typelessIndicatorWindow;
     }
 
+    // 只是「建立當下」的初始位置：非 darwin 平台會直接沿用；darwin 平台每次
+    // showTypelessIndicator() 顯示前都會由 _typelessIndicatorPositioner 依前景視窗
+    // 所在的螢幕重新定位，因此這裡固定用主螢幕即可，不必也不該在此判斷前景視窗。
     const { screen } = require("electron");
     const primaryDisplay = screen.getPrimaryDisplay();
-    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+    const { workArea } = primaryDisplay;
 
     // 視窗尺寸
-    const windowWidth = 240;
-    const windowHeight = 72;
+    const windowWidth = INDICATOR_WIDTH;
+    const windowHeight = INDICATOR_HEIGHT;
 
     this.typelessIndicatorWindow = new BrowserWindow({
       width: windowWidth,
       height: windowHeight,
-      x: Math.round((screenWidth - windowWidth) / 2), // 螢幕正中間
-      y: screenHeight - windowHeight - 24, // 更貼近螢幕底部
+      x: workArea.x + Math.round((workArea.width - windowWidth) / 2), // 螢幕正中間（含 workArea 偏移）
+      y: workArea.y + workArea.height - windowHeight - INDICATOR_MARGIN_BOTTOM, // 更貼近螢幕底部
       frame: false,
       transparent: true,
       alwaysOnTop: true,
@@ -438,6 +490,15 @@ class WindowManager {
       // 自癒：載入失敗的視窗會被快取重用成「隱形膠囊」，直接銷毀讓下次重建
       try { this.typelessIndicatorWindow.destroy(); } catch (err) { /* ignore */ }
       this.typelessIndicatorWindow = null;
+    });
+
+    // 內容每次載入完成都把目前操作模式狀態推給藥丸（避免訊息早於渲染端監聽器）。
+    // 在此集中註冊一次，取代過去每次冷啟 showTypelessIndicator() 各自掛 once listener
+    // 的做法——連續冷啟不再累積多個監聽器，時序也更好推理。
+    this.typelessIndicatorWindow.webContents.on("did-finish-load", () => {
+      if (this.typelessIndicatorWindow && !this.typelessIndicatorWindow.isDestroyed()) {
+        try { this.typelessIndicatorWindow.webContents.send("command-mode-changed", this.commandMode); } catch (e) { /* ignore */ }
+      }
     });
 
     this.typelessIndicatorWindow.on("closed", () => {
@@ -527,22 +588,69 @@ class WindowManager {
         try { this.typelessIndicatorWindow.webContents.send("command-mode-changed", this.commandMode); } catch (e) { /* ignore */ }
       }
     };
+
+    // 先定位、後顯示：setPosition 必須在 showInactive 之前套用，
+    // 不然會先在舊螢幕的位置閃一下才跳到正確螢幕。position 為 null（定位失敗）
+    // 時就不重定位，照現有位置顯示——保住「錄音有視覺回饋」與 Esc 可取消。
+    const applyPositionAndShow = (position) => {
+      const win = this.typelessIndicatorWindow;
+      if (!win || win.isDestroyed()) return;
+      if (position) {
+        try { win.setPosition(position.x, position.y); } catch (e) { /* ignore */ }
+      }
+      win.showInactive();
+    };
+
+    const isDarwin = process.platform === "darwin";
+
     if (this.typelessIndicatorWindow && !this.typelessIndicatorWindow.isDestroyed()) {
       pushState();
-      this.typelessIndicatorWindow.showInactive();
+      if (isDarwin) {
+        // darwin：每次顯示前重新取得前景視窗所在的螢幕並重新定位（雙螢幕 bug 修正核心）。
+        // 任何失敗都不阻礙錄音——positioner 失敗時會用 null 呼叫回呼，維持現有位置顯示。
+        this._typelessIndicatorPositioner.requestShow(applyPositionAndShow);
+      } else {
+        this.typelessIndicatorWindow.showInactive();
+      }
     } else {
-      this.createTypelessIndicatorWindow().then(() => {
-        if (this.typelessIndicatorWindow) {
-          // 等內容載入完再推狀態，避免訊息早於監聽器
-          this.typelessIndicatorWindow.webContents.once("did-finish-load", pushState);
-          pushState();
-          this.typelessIndicatorWindow.showInactive();
-        }
-      });
+      const windowReady = this.createTypelessIndicatorWindow();
+      if (isDarwin) {
+        // 冷啟動：視窗建立（loadFile）與前景視窗 bounds 並行取得，兩者都完成才套用+顯示；
+        // 期間若又有新的 showTypelessIndicator() 呼叫，這次的定位序號會過期，回呼不會被叫到。
+        this._typelessIndicatorPositioner.requestShow((position, meta) => {
+          windowReady
+            .then(() => {
+              if (!this.typelessIndicatorWindow) return;
+              // 阻擋級競態修正：positioner 的序號過期檢查只在 bounds 回來當下做一次，但這裡
+              // 還要等 windowReady（loadFile ~數百 ms）才真正顯示。這段等待期間可能已 notifyHidden
+              // （Esc 取消錄音）或有新的 requestShow ——套用前必須再複驗一次序號，過期就什麼都不做，
+              // 否則指示器會在錄音已取消後才 showInactive() 浮現且永久殘留。
+              if (meta && typeof meta.stillCurrent === "function" && !meta.stillCurrent()) return;
+              pushState();
+              applyPositionAndShow(position);
+            })
+            .catch((err) => {
+              console.error("[typeless-indicator] 建立指示器視窗失敗：", err);
+            });
+        });
+      } else {
+        windowReady
+          .then(() => {
+            if (this.typelessIndicatorWindow) {
+              pushState();
+              this.typelessIndicatorWindow.showInactive();
+            }
+          })
+          .catch((err) => {
+            console.error("[typeless-indicator] 建立指示器視窗失敗：", err);
+          });
+      }
     }
   }
 
   hideTypelessIndicator() {
+    // 讓仍在途的定位請求作廢：視窗已隱藏，遲到的定位結果不該再套用或顯示。
+    this._typelessIndicatorPositioner.notifyHidden();
     if (this.typelessIndicatorWindow && !this.typelessIndicatorWindow.isDestroyed()) {
       this.typelessIndicatorWindow.hide();
     }
