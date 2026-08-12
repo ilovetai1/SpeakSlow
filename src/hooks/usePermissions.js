@@ -7,8 +7,9 @@ export const usePermissions = (showAlertDialog) => {
   const [accessibilityPermissionGranted, setAccessibilityPermissionGranted] = useState(false);
 
   const requestMicPermission = useCallback(async () => {
+    let permissionStream = null;
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       setMicPermissionGranted(true);
       if (showAlertDialog) {
         showAlertDialog({
@@ -31,6 +32,9 @@ export const usePermissions = (showAlertDialog) => {
       } else {
         alert(t('permissions.micNeededDesc'));
       }
+    } finally {
+      // 權限測試只需要確認能否取得串流；成功後不可繼續占用系統麥克風。
+      permissionStream?.getTracks().forEach((track) => track.stop());
     }
   }, [showAlertDialog, t]);
 

@@ -116,7 +116,8 @@
     "asarUnpack": [
       "sherpa_server.py",
       "text_processing.py",
-      "node_modules/**/*better-sqlite3*/**/*"
+      "node_modules/**/*better-sqlite3*/**/*",
+      "node_modules/**/*uiohook-napi*/**/*"
     ],
     "extraResources": [
       {

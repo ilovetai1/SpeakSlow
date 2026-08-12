@@ -1,6 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { convertText, useTranslation } from '../i18n';
 
+function stopMediaStream(stream) {
+  if (!stream) return;
+  stream.getTracks().forEach((track) => track.stop());
+}
+
 /**
  * 录音功能Hook
  * 提供录音、停止录音、音频处理等功能
@@ -19,6 +24,9 @@ export const useRecording = (modelStatus) => {
   const audioContextRef = useRef(null);
   const processorRef = useRef(null);
   const sourceRef = useRef(null);
+  // 每次開始都取得新序號；停止、取消、卸載會使舊序號失效。
+  // 用來阻止遲到的 getUserMedia() 在使用者已中斷後重新占用麥克風。
+  const startGenerationRef = useRef(0);
 
   // PCM 音頻數據緩衝區（直接錄製 PCM，不需要解碼 webm）
   const pcmBufferRef = useRef([]);
@@ -103,7 +111,7 @@ export const useRecording = (modelStatus) => {
       audioContextRef.current = null;
     }
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      stopMediaStream(streamRef.current);
       streamRef.current = null;
     }
     pcmBufferRef.current = [];
@@ -111,6 +119,9 @@ export const useRecording = (modelStatus) => {
 
   // 开始录音（使用 ScriptProcessor 直接錄製 PCM，避免 webm 解碼問題）
   const startRecording = useCallback(async () => {
+    const startGeneration = ++startGenerationRef.current;
+    const isCurrentStart = () => startGenerationRef.current === startGeneration;
+
     try {
       setError(null);
 
@@ -144,6 +155,9 @@ export const useRecording = (modelStatus) => {
         agcOn = (await window.electronAPI?.getSetting?.('mic_auto_gain', true)) !== false;
       } catch (e) { /* 讀不到就用預設 */ }
 
+      // 使用者可能在設定讀取期間就已停止／取消；此時不得再請求麥克風。
+      if (!isCurrentStart()) return;
+
       const audioConstraints = {
         sampleRate: 16000,
         channelCount: 1,
@@ -161,10 +175,17 @@ export const useRecording = (modelStatus) => {
         if (savedMicId) {
           if (window.electronAPI?.log) window.electronAPI.log('warn', `指定的麥克風不可用，改用預設: ${err.message}`);
           delete audioConstraints.deviceId;
+          if (!isCurrentStart()) return;
           stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
         } else {
           throw err;
         }
+      }
+
+      // getUserMedia 無法被同步取消；若結果遲到，必須在任何後續處理前立即釋放。
+      if (!isCurrentStart()) {
+        stopMediaStream(stream);
+        return;
       }
 
       // 更新狀態
@@ -200,6 +221,10 @@ export const useRecording = (modelStatus) => {
       } catch (logErr) {
         // 記錄失敗不影響錄音
       }
+      if (!isCurrentStart()) {
+        cleanup();
+        return;
+      }
 
       // 創建 AudioContext（使用預設採樣率，讓瀏覽器自動處理）
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -208,6 +233,10 @@ export const useRecording = (modelStatus) => {
       // 確保 AudioContext 是活躍的
       if (audioContext.state === 'suspended') {
         await audioContext.resume();
+      }
+      if (!isCurrentStart()) {
+        cleanup();
+        return;
       }
 
       // 創建音源節點
@@ -234,6 +263,10 @@ export const useRecording = (modelStatus) => {
       try {
         asrProfile = await window.electronAPI?.getSetting?.('asr_profile', 'standard') || 'standard';
       } catch (e) { /* 預設 standard */ }
+      if (!isCurrentStart()) {
+        cleanup();
+        return;
+      }
       precogRef.current = { active: false, fedChunks: 0, recoveryFed: 0, timer: null, profile: asrProfile };
       const srcRate = audioContext.sampleRate;
       // 崩潰救援：開一條暫存檔，錄音中持續寫入；正常/取消停止時會刪掉
@@ -269,6 +302,8 @@ export const useRecording = (modelStatus) => {
       }, 1000);
 
     } catch (err) {
+      if (!isCurrentStart()) return;
+      startGenerationRef.current += 1;
       setError(t('errors.cannotStartRecording', { error: err.message }));
       setIsRecording(false);
       cleanup();
@@ -277,7 +312,14 @@ export const useRecording = (modelStatus) => {
 
   // 停止录音
   const stopRecording = useCallback(async () => {
-    if (!isRecording) return;
+    // 先使尚在等待中的 startRecording 失效；即使 React 狀態尚未刷新也能確實中斷。
+    startGenerationRef.current += 1;
+    if (!isRecording || !streamRef.current || !audioContextRef.current) {
+      cleanup();
+      setIsRecording(false);
+      setIsProcessing(false);
+      return;
+    }
 
     setIsRecording(false);
     setIsProcessing(true);
@@ -571,6 +613,7 @@ export const useRecording = (modelStatus) => {
 
   // 取消录音
   const cancelRecording = useCallback(() => {
+    startGenerationRef.current += 1;
     stopPrecogTimer();
     if (precogRef.current.active) {
       precogRef.current.active = false;
@@ -581,6 +624,12 @@ export const useRecording = (modelStatus) => {
     setIsProcessing(false);
     setError(null);
   }, [cleanup, stopPrecogTimer]);
+
+  // 視窗銷毀／renderer 卸載也必須使所有遲到的麥克風請求失效。
+  useEffect(() => () => {
+    startGenerationRef.current += 1;
+    cleanup();
+  }, [cleanup]);
 
   // 获取录音权限状态
   const checkPermissions = useCallback(async () => {

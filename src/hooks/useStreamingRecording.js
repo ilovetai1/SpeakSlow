@@ -2,6 +2,11 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useModelStatus } from './useModelStatus';
 import { convertText, useTranslation } from '../i18n';
 
+function stopMediaStream(stream) {
+  if (!stream) return;
+  stream.getTracks().forEach((track) => track.stop());
+}
+
 /**
  * 串流錄音功能 Hook
  * 提供邊錄音邊辨識、即時顯示文字的功能
@@ -22,6 +27,7 @@ export const useStreamingRecording = () => {
   const audioContextRef = useRef(null);
   const processorRef = useRef(null);
   const sourceRef = useRef(null);
+  const startGenerationRef = useRef(0);
 
   // 串流辨識狀態
   const streamingActiveRef = useRef(false);
@@ -84,7 +90,7 @@ export const useStreamingRecording = () => {
     }
 
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      stopMediaStream(streamRef.current);
       streamRef.current = null;
     }
 
@@ -97,6 +103,9 @@ export const useStreamingRecording = () => {
 
   // 開始串流錄音
   const startStreaming = useCallback(async () => {
+    const startGeneration = ++startGenerationRef.current;
+    const isCurrentStart = () => startGenerationRef.current === startGeneration;
+
     try {
       setError(null);
       setPartialText('');
@@ -133,6 +142,11 @@ export const useStreamingRecording = () => {
           autoGainControl: true
         }
       });
+
+      if (!isCurrentStart()) {
+        stopMediaStream(stream);
+        return;
+      }
 
       // 如果之前沒有權限，現在有了，更新狀態
       if (micPermissionRef.current !== 'granted') {
@@ -199,6 +213,10 @@ export const useStreamingRecording = () => {
       // 開始串流辨識會話
       if (window.electronAPI) {
         const startResult = await window.electronAPI.streamingStart();
+        if (!isCurrentStart()) {
+          cleanup();
+          return;
+        }
         if (!startResult.success) {
           throw new Error(startResult.error || t('errors.cannotStartStreamingSession'));
         }
@@ -269,6 +287,8 @@ export const useStreamingRecording = () => {
       }, 250);  // 平衡模式：250ms 間隔
 
     } catch (err) {
+      if (!isCurrentStart()) return;
+      startGenerationRef.current += 1;
       setError(t('errors.cannotStartStreaming', { error: err.message }));
       setIsRecording(false);
       setIsInitializing(false);
@@ -278,7 +298,14 @@ export const useStreamingRecording = () => {
 
   // 停止串流錄音
   const stopStreaming = useCallback(async () => {
-    if (!streamingActiveRef.current) return;
+    startGenerationRef.current += 1;
+    if (!streamingActiveRef.current) {
+      cleanup();
+      setIsRecording(false);
+      setIsInitializing(false);
+      setIsProcessing(false);
+      return;
+    }
 
     streamingActiveRef.current = false;
     setIsProcessing(true);
@@ -348,15 +375,18 @@ export const useStreamingRecording = () => {
     } finally {
       cleanup();
       setIsRecording(false);
+      setIsInitializing(false);
       setIsProcessing(false);
     }
   }, [cleanup, t]);
 
   // 取消串流錄音
   const cancelStreaming = useCallback(() => {
+    startGenerationRef.current += 1;
     streamingActiveRef.current = false;
     cleanup();
     setIsRecording(false);
+    setIsInitializing(false);
     setIsProcessing(false);
     setPartialText('');
     setFullText('');
@@ -366,6 +396,7 @@ export const useStreamingRecording = () => {
   // 組件卸載時清理
   useEffect(() => {
     return () => {
+      startGenerationRef.current += 1;
       cleanup();
     };
   }, [cleanup]);

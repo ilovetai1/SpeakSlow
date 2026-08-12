@@ -417,7 +417,9 @@ class WindowManager {
 
   hideSettingsWindow() {
     if (this.settingsWindow) {
-      this.settingsWindow.hide();
+      // 設定頁 general 分頁有即時麥克風音量監測。只 hide 不會卸載 React，
+      // 會讓無可見視窗的 renderer 持續持有 MediaStream；真正關閉才能觸發 cleanup。
+      this.settingsWindow.close();
     }
   }
 

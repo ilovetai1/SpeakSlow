@@ -15,6 +15,7 @@ import { Mic, MicOff, Settings, Copy, Download, X, Pin, Minus, Sparkles, Minimiz
 import SettingsPanel from "./components/SettingsPanel";
 import { ModelDownloadProgress } from "./components/ui/model-status-indicator";
 import { resolveStreamingModeAvailability } from "./utils/streamingModeSupport.mjs";
+import { resolveRecordingUiState } from "./utils/recordingUiState.mjs";
 
 // 动态导入设置页面组件
 const SettingsPage = React.lazy(() => import('./settings.jsx').then(module => ({ default: module.SettingsPage })));
@@ -624,10 +625,16 @@ export default function App() {
     enableTypeless();
   }, []);
 
-  // 統一的錄音狀態（根據模式選擇）
-  const isRecording = streamingMode ? isRecordingStreaming : isRecordingNormal;
-  const isRecordingProcessing = streamingMode ? isProcessingStreaming : isRecordingProcessingNormal;
-  const recordingError = streamingMode ? streamingError : recordingErrorNormal;
+  // 統一的錄音狀態：任何實際錄音來源仍在工作，所有畫面都必須保持錄音提示。
+  const { isRecording, isRecordingProcessing, recordingError } = resolveRecordingUiState({
+    streamingMode,
+    isRecordingNormal,
+    isRecordingStreaming,
+    isProcessingNormal: isRecordingProcessingNormal,
+    isProcessingStreaming,
+    errorNormal: recordingErrorNormal,
+    errorStreaming: streamingError,
+  });
   // 同步錄音狀態到 ref（切換操作模式的「鬼切」判斷要讀最新值）
   useEffect(() => {
     isRecordingRef.current = isRecording;
@@ -644,12 +651,14 @@ export default function App() {
   }, [streamingMode, startStreaming, startRecordingNormal]);
 
   const stopRecording = useCallback(() => {
-    if (streamingMode) {
-      stopStreaming();
-    } else {
+    if (isRecordingNormal) {
       stopRecordingNormal();
+      return;
     }
-  }, [streamingMode, stopStreaming, stopRecordingNormal]);
+    if (isRecordingStreaming) {
+      stopStreaming();
+    }
+  }, [isRecordingNormal, isRecordingStreaming, stopStreaming, stopRecordingNormal]);
 
   const {
     processText,
@@ -1166,18 +1175,16 @@ export default function App() {
     // 監聽 TypeLess 停止錄音事件
     const unsubscribeStop = window.electronAPI.onTypelessStopRecording?.(() => {
       console.log('TypeLess: 收到停止錄音事件');
-      if (isRecordingNormal) {
-        stopRecordingNormal();
-      }
+      // 即使 getUserMedia 還沒完成、React 尚未把 isRecording 刷成 true，
+      // 第二次按鍵仍代表明確的停止意圖；hook 會使 pending start 失效。
+      stopRecordingNormal();
     });
 
     // 監聽 TypeLess 取消錄音事件（錄音中按 Esc）：丟棄音訊，不轉錄、不貼上
     const unsubscribeCancel = window.electronAPI.onTypelessCancelRecording?.(() => {
       console.log('TypeLess: 收到取消錄音事件 (Esc)');
-      if (isRecordingNormal) {
-        cancelRecordingNormal();
-        notifyCancel();
-      }
+      cancelRecordingNormal();
+      notifyCancel();
     });
 
     return () => {
