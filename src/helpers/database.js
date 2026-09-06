@@ -323,6 +323,21 @@ class DatabaseManager {
     return stmt.run(text, processedText, id);
   }
 
+  updateTranscriptionFinalText(id, text) {
+    if (!text || !String(text).trim()) throw new Error("最終文字不可為空");
+    return this.db.prepare(
+      `UPDATE transcriptions SET text = ?, processed_text = NULL WHERE id = ?`
+    ).run(String(text).trim(), id);
+  }
+
+  replaceTranscriptionBaseline(id, text) {
+    if (!text || !String(text).trim()) throw new Error("辨識文字不可為空");
+    const normalized = String(text).trim();
+    return this.db.prepare(
+      `UPDATE transcriptions SET text = ?, raw_text = ?, processed_text = NULL WHERE id = ?`
+    ).run(normalized, normalized, id);
+  }
+
   clearAllTranscriptions() {
     const stmt = this.db.prepare("DELETE FROM transcriptions");
     return stmt.run();

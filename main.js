@@ -317,6 +317,7 @@ app.on("before-quit", () => {
   // 從 dock 右鍵「結束」或 Cmd+Q 退出時，標記為「真正退出」，否則 close handler 會把它
   // 當成一般關閉 → preventDefault + hide → Mac 上「關不掉、結束沒反應」（issue #16）。
   windowManager.isQuitting = true;
+  ipcHandlers?.shutdown();
 });
 
 app.on("will-quit", () => {

@@ -11,8 +11,8 @@ module.exports = function register(ctx) {
     }
   });
 
-  ipcMain.handle("paste-text", async (event, text) => {
-    return ctx.clipboardManager.pasteText(text);
+  ipcMain.handle("paste-text", async (event, text, options = {}) => {
+    return ctx.clipboardManager.pasteText(text, options);
   });
 
   // 發送 Enter 鍵（完全信任模式）

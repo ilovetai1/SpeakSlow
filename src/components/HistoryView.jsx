@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "../i18n";
 import { getLevelIndex, LEVELS } from "../utils/levels";
+import { historyTextContract } from "../utils/historyPolishing.mjs";
 
 // 統計橫幅組件 - 用幽默方式展示成就
 const StatsBanner = ({ stats }) => {
@@ -175,6 +176,8 @@ export const HistoryView = () => {
   const [stats, setStats] = React.useState(null);
   const [dailyStats, setDailyStats] = React.useState([]);
   const [playingId, setPlayingId] = React.useState(null); // 正在播放的那筆 id
+  const [repolishingId, setRepolishingId] = React.useState(null);
+  const [repolishPreview, setRepolishPreview] = React.useState(null);
   const audioRef = React.useRef(null);
 
   // 播放 / 停止某筆錄音（讀 WAV → base64 → Audio 播）
@@ -240,8 +243,9 @@ export const HistoryView = () => {
         window.electronAPI.getTranscriptionStats(),
         window.electronAPI.getDailyStats?.(14) ?? Promise.resolve([])
       ]);
-      setTranscriptions(result || []);
-      setFilteredTranscriptions(result || []);
+      const normalized = (result || []).map(historyTextContract);
+      setTranscriptions(normalized);
+      setFilteredTranscriptions(normalized);
       setStats(statsResult);
       setDailyStats(dailyResult || []);
     } catch (error) {
@@ -258,8 +262,8 @@ export const HistoryView = () => {
       const q = searchQuery.toLowerCase();
       setFilteredTranscriptions(
         transcriptions.filter(item =>
-          item.text?.toLowerCase().includes(q) ||
-          item.processed_text?.toLowerCase().includes(q)
+          item.finalText?.toLowerCase().includes(q) ||
+          item.baselineText?.toLowerCase().includes(q)
         )
       );
     }
@@ -295,6 +299,37 @@ export const HistoryView = () => {
   const [retranscribingId, setRetranscribingId] = React.useState(null);
   const [retranscribingModel, setRetranscribingModel] = React.useState(null);
 
+  const handleRepolish = async (item) => {
+    if (repolishingId || !window.electronAPI?.previewHistoryPolish) return;
+    setRepolishingId(item.id);
+    try {
+      const result = await window.electronAPI.previewHistoryPolish(item.id);
+      setRepolishPreview(result?.success
+        ? { id: item.id, ...result }
+        : { id: item.id, error: result?.error || '潤稿失敗' });
+    } catch (error) {
+      setRepolishPreview({ id: item.id, error: error.message || '潤稿失敗' });
+    } finally {
+      setRepolishingId(null);
+    }
+  };
+
+  const confirmRepolish = async () => {
+    if (!repolishPreview?.candidateText) return;
+    const result = await window.electronAPI?.applyHistoryPolish?.(
+      repolishPreview.id,
+      repolishPreview.candidateText,
+    );
+    if (!result?.success) {
+      setRepolishPreview((current) => ({ ...current, error: result?.error || '更新失敗' }));
+      return;
+    }
+    setTranscriptions((current) => current.map((item) => item.id === repolishPreview.id
+      ? { ...item, text: result.text, processed_text: null, finalText: result.text }
+      : item));
+    setRepolishPreview(null);
+  };
+
   const handleRetranscribe = async (id, model) => {
     if (!window.electronAPI?.retranscribeTranscription || retranscribingId) return;
     setRetranscribingId(id);
@@ -305,7 +340,14 @@ export const HistoryView = () => {
       if (res?.success) {
         const prevText = transcriptions.find(it => it.id === id)?.text || '';
         setTranscriptions(prev =>
-          prev.map(it => (it.id === id ? { ...it, text: res.text, processed_text: null } : it))
+          prev.map(it => (it.id === id ? {
+            ...it,
+            text: res.text,
+            raw_text: res.text,
+            processed_text: null,
+            baselineText: res.text,
+            finalText: res.text,
+          } : it))
         );
         const same = (res.text || '').trim() === prevText.trim();
         const prefix = model === 'whisper' ? 'Whisper ' : '';
@@ -486,12 +528,22 @@ export const HistoryView = () => {
                       </>
                     )}
                     <button
-                      onClick={() => handleCopy(item.processed_text || item.text)}
+                      onClick={() => handleCopy(item.finalText)}
                       className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                       title={t('history.copyText')}
                     >
                       <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleRepolish(item)}
+                      disabled={repolishingId === item.id}
+                      className="p-2 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded-lg transition-colors disabled:opacity-50"
+                      title="重新潤稿"
+                    >
+                      <svg className={`w-4 h-4 text-amber-600 dark:text-amber-400 ${repolishingId === item.id ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4m10 10v4m-2-2h4M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" />
                       </svg>
                     </button>
                     <button
@@ -511,29 +563,17 @@ export const HistoryView = () => {
                     className="chinese-content bg-gray-50 dark:bg-gray-700/60 p-2.5 rounded-lg border dark:border-gray-600/30 text-gray-800 dark:text-gray-100"
                     style={{ fontSize: '13px', lineHeight: 1.6, letterSpacing: '0.02em', whiteSpace: 'pre-wrap' }}
                   >
-                    {item.text}
+                    {item.finalText}
                   </p>
                 </div>
 
-                {item.processed_text && item.processed_text.trim() !== (item.raw_text || '').trim() && (
-                  <div className="mt-2">
-                    <h4 className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mb-1">{t('history.aiOptimized')}：</h4>
-                    <p
-                      className="chinese-content bg-emerald-50 dark:bg-emerald-900/20 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-700 text-gray-800 dark:text-gray-100"
-                      style={{ fontSize: '13px', lineHeight: 1.6, letterSpacing: '0.02em', whiteSpace: 'pre-wrap' }}
-                    >
-                      {item.processed_text}
-                    </p>
-                  </div>
-                )}
-
-                {item.raw_text && item.raw_text.trim() !== item.text.trim() && (
+                {item.baselineText && item.baselineText !== item.finalText && (
                   <div className="mt-2">
                     <p
                       className="chinese-content bg-gray-100 dark:bg-gray-700/40 p-2.5 rounded-lg border dark:border-gray-600/20 text-gray-600 dark:text-gray-200"
                       style={{ fontSize: '12px', lineHeight: 1.55, letterSpacing: '0.02em' }}
                     >
-                      {item.raw_text}
+                      {item.baselineText}
                     </p>
                   </div>
                 )}
@@ -542,6 +582,38 @@ export const HistoryView = () => {
           </div>
         )}
       </div>
+
+      {repolishPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
+          <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl dark:bg-gray-800">
+            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">重新潤稿預覽</h3>
+            {repolishPreview.error ? (
+              <p className="mt-3 text-sm text-red-600 dark:text-red-400">{repolishPreview.error}</p>
+            ) : (
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div>
+                  <p className="mb-1 text-xs text-gray-500">目前結果</p>
+                  <p className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-lg bg-gray-100 p-3 text-sm dark:bg-gray-700">{repolishPreview.currentText}</p>
+                </div>
+                <div>
+                  <p className="mb-1 text-xs text-gray-500">新候選</p>
+                  <p className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-lg bg-amber-50 p-3 text-sm dark:bg-amber-900/20">{repolishPreview.candidateText}</p>
+                </div>
+              </div>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setRepolishPreview(null)} className="rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">
+                取消
+              </button>
+              {!repolishPreview.error && (
+                <button type="button" onClick={confirmRepolish} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
+                  確認取代
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

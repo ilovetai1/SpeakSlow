@@ -303,9 +303,10 @@ class ClipboardManager {
     return await this.pasteText(text);
   }
 
-  async pasteText(text) {
+  async pasteText(text, options = {}) {
     try {
-      this.safeLog("🎯 pasteText:", text?.substring(0, 30));
+      this.safeLog("🎯 pasteText", { characterCount: [...String(text || "")].length });
+      const useCurrentTarget = options.target === "current";
 
       if (process.platform === "win32") {
         // 先保存使用者原本的剪貼簿，貼上後再還原，避免覆蓋掉他複製的東西
@@ -313,12 +314,15 @@ class ClipboardManager {
         clipboard.writeText(text);
 
         // 優先用常駐 PowerShell 快速還原焦點 + 貼上（~0.1 秒）
-        if (this.focusAndPasteFast()) {
+        const fastPasteStarted = useCurrentTarget
+          ? this._psSend(`$ws.SendKeys('^v')`)
+          : this.focusAndPasteFast();
+        if (fastPasteStarted) {
           this.safeLog("⚡ 快速貼上 (常駐 PS, 還原焦點 + Ctrl+V)");
         } else {
           // 回退：舊的 spawn 方式（每次 Add-Type，較慢）
           this.safeLog("⌨️ 嘗試自動貼上 (SendKeys 回退)");
-          await this.pasteWindows();
+          await this.pasteWindows({ restoreFocus: !useCurrentTarget });
         }
 
         // 等貼上完成後還原原本的剪貼簿內容（給足 Ctrl+V 讀取的時間）
@@ -350,7 +354,7 @@ class ClipboardManager {
         }
 
         this.safeLog("✅ 权限已授予，尝试粘贴");
-        return await this.pasteMacOS(originalClipboard);
+        return await this.pasteMacOS(originalClipboard, { restoreFocus: !useCurrentTarget });
       } else {
         // Linux
         return await this.pasteLinux(originalClipboard);
@@ -360,9 +364,9 @@ class ClipboardManager {
     }
   }
 
-  async pasteMacOS(originalClipboard) {
+  async pasteMacOS(originalClipboard, { restoreFocus = true } = {}) {
     // 貼上前先把焦點還原到熱鍵觸發前的 app（否則會貼到本程式視窗）by webeasyplay PR #3
-    if (this.previousMacForegroundApp) {
+    if (restoreFocus && this.previousMacForegroundApp) {
       const restoreResult = await this.restoreMacOSForegroundApp();
       if (restoreResult.success) {
         this.safeLog("🔄 macOS 貼上前已還原原本焦點 app");
@@ -423,9 +427,9 @@ class ClipboardManager {
     });
   }
 
-  async pasteWindows() {
+  async pasteWindows({ restoreFocus = true } = {}) {
     // 先恢復焦點到之前的視窗，再貼上
-    if (this.previousForegroundWindow) {
+    if (restoreFocus && this.previousForegroundWindow) {
       this.safeLog("🔄 貼上前先恢復焦點到之前的視窗...");
       await this.restoreForegroundWindow();
       // 等待視窗切換完成

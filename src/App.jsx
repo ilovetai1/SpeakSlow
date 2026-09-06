@@ -7,7 +7,6 @@ import { useHotkey } from "./hooks/useHotkey";
 import { useWindowDrag } from "./hooks/useWindowDrag";
 import { useRecording } from "./hooks/useRecording";
 import { useStreamingRecording } from "./hooks/useStreamingRecording";
-import { useTextProcessing } from "./hooks/useTextProcessing";
 import { useModelStatus } from "./hooks/useModelStatus";
 import { usePermissions } from "./hooks/usePermissions";
 import { useTranslation } from "./i18n";
@@ -15,6 +14,7 @@ import { Mic, MicOff, Settings, Copy, Download, X, Pin, Minus, Sparkles, Minimiz
 import SettingsPanel from "./components/SettingsPanel";
 import { ModelDownloadProgress } from "./components/ui/model-status-indicator";
 import { resolveStreamingModeAvailability } from "./utils/streamingModeSupport.mjs";
+import { decideOutputActions, nextPolishingIssue } from "./utils/transcriptionOutputPolicy.mjs";
 
 // 动态导入设置页面组件
 const SettingsPage = React.lazy(() => import('./settings.jsx').then(module => ({ default: module.SettingsPage })));
@@ -373,6 +373,7 @@ export default function App() {
   const [miniFlash, setMiniFlash] = useState(null); // 迷你模式：在小條上閃一下的訊息（取代浮動 toast）
   const miniFlashTimer = useRef(null);
   const [aiOptimizationEnabled, setAiOptimizationEnabled] = useState(false); // AI 優化狀態
+  const [latestIssue, setLatestIssue] = useState(null);
 
   // 錄音完成後動作設定
   const [pasteAfterTranscription, setPasteAfterTranscription] = useState(true);
@@ -664,12 +665,6 @@ export default function App() {
     }
   }, [streamingMode, stopStreaming, stopRecordingNormal]);
 
-  const {
-    processText,
-    isProcessing: isTextProcessing,
-    error: textProcessingError
-  } = useTextProcessing();
-
   // 防重复粘贴的引用
   const lastPasteRef = useRef({ text: '', timestamp: 0 });
   // 文字捲動容器：有新辨識結果時自動捲到底
@@ -726,6 +721,13 @@ export default function App() {
       return; // 操作模式不貼字
     }
 
+    const initialActions = decideOutputActions({
+      pasteEnabled: pasteAfterTranscription,
+      enterEnabled: autoEnterAfterPaste,
+      pasteSucceeded: false,
+    });
+    if (!initialActions.paste) return;
+
     const now = Date.now();
     const lastPaste = lastPasteRef.current;
 
@@ -741,10 +743,14 @@ export default function App() {
       if (window.electronAPI) {
         // 永遠自動貼上：交由主進程處理剪貼簿（保存原本 → 寫入辨識文字 → 貼上 → 還原原本）
         // 不在前端先寫剪貼簿，否則主進程會把「辨識文字」誤當成原本內容
-        await window.electronAPI.pasteText(text);
+        await window.electronAPI.pasteText(text, { target: 'current' });
 
-        // 如果啟用完全信任模式，貼上後自動發送 Enter
-        if (autoEnterAfterPaste) {
+        const completedActions = decideOutputActions({
+          pasteEnabled: pasteAfterTranscription,
+          enterEnabled: autoEnterAfterPaste,
+          pasteSucceeded: true,
+        });
+        if (completedActions.enter) {
           await new Promise(resolve => setTimeout(resolve, 100));
           await window.electronAPI.sendEnter();
         }
@@ -788,6 +794,7 @@ export default function App() {
 
   // 处理AI优化完成
   const handleAIOptimizationComplete = useCallback(async (optimizedResult) => {
+    setLatestIssue((current) => nextPolishingIssue(current, optimizedResult));
     if (optimizedResult.success && optimizedResult.enhanced_by_ai && optimizedResult.text) {
       // 显示AI优化后的文本
       setProcessedText(optimizedResult.text);
@@ -1238,12 +1245,6 @@ export default function App() {
     }
   }, [recordingError]);
 
-  useEffect(() => {
-    if (textProcessingError) {
-      showNotification('error', textProcessingError);
-    }
-  }, [textProcessingError]);
-
   // 确定当前麦克风状态
   const getMicState = () => {
     // 串流模式初始化中
@@ -1616,6 +1617,12 @@ export default function App() {
               t('app.clickToRecord', { hotkey })
             )}
           </p>
+
+          {latestIssue && (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-300" role="status">
+              {latestIssue}
+            </p>
+          )}
 
           {/* 處理中/優化中/初始化中的小進度條 */}
           {(micState === "processing" || micState === "optimizing" || micState === "initializing") && (

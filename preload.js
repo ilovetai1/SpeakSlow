@@ -67,9 +67,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // AI文本处理
   processText: (text, mode) => ipcRenderer.invoke("process-text", text, mode),
   checkAIStatus: (testConfig) => ipcRenderer.invoke("check-ai-status", testConfig),
+  listOllamaModels: () => ipcRenderer.invoke("list-ollama-models"),
+  getTranscriptPolishingPrompt: () => ipcRenderer.invoke("get-transcript-polishing-prompt"),
+  setTranscriptPolishingPrompt: (prompt) => ipcRenderer.invoke("set-transcript-polishing-prompt", prompt),
 
   // 剪贴板操作
-  pasteText: (text) => ipcRenderer.invoke("paste-text", text),
+  pasteText: (text, options) => ipcRenderer.invoke("paste-text", text, options),
   copyText: (text) => ipcRenderer.invoke("copy-text", text),
   readClipboard: () => ipcRenderer.invoke("read-clipboard"),
   writeClipboard: (text) => ipcRenderer.invoke("write-clipboard", text),
@@ -118,6 +121,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("delete-transcription", id),
   retranscribeTranscription: (id, options) =>
     ipcRenderer.invoke("retranscribe-transcription", id, options),
+  previewHistoryPolish: (id) => ipcRenderer.invoke("preview-history-polish", id),
+  applyHistoryPolish: (id, candidateText) => ipcRenderer.invoke("apply-history-polish", id, candidateText),
   clearAllTranscriptions: () =>
     ipcRenderer.invoke("clear-all-transcriptions"),
 
@@ -332,7 +337,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 // 添加一些实用的常量
 contextBridge.exposeInMainWorld("constants", {
   APP_NAME: "聲聲慢 (SpeakSlow)",
-  VERSION: "1.0.0",
+  VERSION: "2.0.0",
   SUPPORTED_AUDIO_FORMATS: ["wav", "mp3", "m4a", "flac"],
   SUPPORTED_EXPORT_FORMATS: ["txt", "docx", "pdf", "json"],
   DEFAULT_HOTKEY: "CommandOrControl+Shift+Space",

@@ -227,10 +227,35 @@ module.exports = function register(ctx) {
       if (!result || !result.success) {
         return { success: false, error: result?.error || "辨識失敗" };
       }
-      ctx.databaseManager.updateTranscriptionText(id, result.text, null);
+      ctx.databaseManager.replaceTranscriptionBaseline(id, result.text);
       return { success: true, text: result.text };
     } catch (e) {
       return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle("preview-history-polish", async (event, id) => {
+    try {
+      const record = ctx.databaseManager.getTranscriptionById(id);
+      if (!record) return { success: false, error: "找不到該筆紀錄" };
+      const { previewHistoryPolish } = await import("../../utils/historyPolishing.mjs");
+      return await previewHistoryPolish({
+        record,
+        processText: (text, mode) => ctx.aiProcessor.processTextWithAI(text, mode),
+      });
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("apply-history-polish", async (event, id, candidateText) => {
+    try {
+      const record = ctx.databaseManager.getTranscriptionById(id);
+      if (!record) return { success: false, error: "找不到該筆紀錄" };
+      ctx.databaseManager.updateTranscriptionFinalText(id, candidateText);
+      return { success: true, text: String(candidateText).trim() };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
   });
 

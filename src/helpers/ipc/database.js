@@ -1,4 +1,8 @@
 const { ipcMain } = require("electron");
+const {
+  isProtectedRendererSetting,
+  redactSettingsForRenderer,
+} = require("../../utils/settingsSecurity");
 
 module.exports = function register(ctx) {
   // 数据库相关
@@ -36,6 +40,9 @@ module.exports = function register(ctx) {
 
   // 设置相关
   ipcMain.handle("get-setting", (event, key, defaultValue) => {
+    if (isProtectedRendererSetting(key)) {
+      throw new Error("受保護設定不得由 renderer 讀取");
+    }
     return ctx.databaseManager.getSetting(key, defaultValue);
   });
 
@@ -43,22 +50,24 @@ module.exports = function register(ctx) {
     const result = ctx.databaseManager.setSetting(key, value);
 
     // 廣播設定變更到所有視窗（用於跨視窗同步）
-    const { BrowserWindow } = require('electron');
-    BrowserWindow.getAllWindows().forEach(win => {
-      if (!win.isDestroyed()) {
-        win.webContents.send('setting-changed', { key, value });
-      }
-    });
+    if (!isProtectedRendererSetting(key)) {
+      const { BrowserWindow } = require('electron');
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('setting-changed', { key, value });
+        }
+      });
+    }
 
     return result;
   });
 
   ipcMain.handle("get-all-settings", () => {
-    return ctx.databaseManager.getAllSettings();
+    return redactSettingsForRenderer(ctx.databaseManager.getAllSettings());
   });
 
   ipcMain.handle("get-settings", () => {
-    return ctx.databaseManager.getAllSettings();
+    return redactSettingsForRenderer(ctx.databaseManager.getAllSettings());
   });
 
   ipcMain.handle("save-setting", (event, key, value) => {

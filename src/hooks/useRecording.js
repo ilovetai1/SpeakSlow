@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { convertText, useTranslation } from '../i18n';
+import { createSingleFlightGate, finalizeTranscript } from '../utils/transcriptFinalization.mjs';
 
 /**
  * 录音功能Hook
@@ -25,6 +26,8 @@ export const useRecording = (modelStatus) => {
 
   // 添加防重复处理机制
   const processingRef = useRef({ isProcessingAudio: false, lastProcessTime: 0 });
+  const pipelineGateRef = useRef(null);
+  if (!pipelineGateRef.current) pipelineGateRef.current = createSingleFlightGate();
 
   // 邊錄邊算（precog）：長講時錄音中先解碼已講完的段落，停止只剩尾段。
   // 錄音超過 PRECOG_START_SEC 才啟動 — 短句維持單次解碼路徑（保留停頓斷行）。
@@ -111,6 +114,10 @@ export const useRecording = (modelStatus) => {
 
   // 开始录音（使用 ScriptProcessor 直接錄製 PCM，避免 webm 解碼問題）
   const startRecording = useCallback(async () => {
+    if (!pipelineGateRef.current.tryStart()) {
+      setError('上一段錄音仍在處理中');
+      return false;
+    }
     try {
       setError(null);
 
@@ -272,7 +279,10 @@ export const useRecording = (modelStatus) => {
       setError(t('errors.cannotStartRecording', { error: err.message }));
       setIsRecording(false);
       cleanup();
+      pipelineGateRef.current.finish();
+      return false;
     }
+    return true;
   }, [modelStatus.isReady, modelStatus.isLoading, modelStatus.error, cleanup, t]);
 
   // 停止录音
@@ -345,6 +355,7 @@ export const useRecording = (modelStatus) => {
       cleanup();
     } finally {
       setIsProcessing(false);
+      pipelineGateRef.current.finish();
     }
   }, [isRecording, cleanup, t]);
 
@@ -404,93 +415,36 @@ export const useRecording = (modelStatus) => {
             window.onTranscriptionComplete({ ...transcriptionResult, text: raw_text, enhanced_by_ai: false });
           }
 
-          // 异步处理AI优化和保存（只保存一次）
-          setIsOptimizing(true);
-          setTimeout(async () => {
-            try {
-              // 从设置中读取是否启用AI优化（默认关闭）
-              const useAI = await window.electronAPI.getSetting('enable_ai_optimization', false);
-
-              let finalData = { ...transcriptionData };
-
-              if (useAI) {
-                try {
-                  if (window.electronAPI && window.electronAPI.log) {
-                    window.electronAPI.log('info', '开始AI文本优化:', raw_text.substring(0, 50) + '...');
-                  }
-                  
-                  const result = await window.electronAPI.processText(raw_text, 'optimize');
-
-                  if (result && result.success) {
-                    let processed_text = result.text;
-
-                    // AI 輸出也需要繁簡轉換
-                    if (shouldConvert && targetLang === 'zh-TW') {
-                      processed_text = convertText(processed_text, 'zh-TW');
-                    }
-
-                    finalData.processed_text = processed_text;
-                    // 如果AI优化后的文本与原始文本不同，则将优化后的文本作为主文本
-                    if (processed_text && processed_text.trim() !== raw_text.trim()) {
-                      finalData.text = processed_text;
-                    }
-                    if (window.electronAPI && window.electronAPI.log) {
-                      window.electronAPI.log('info', 'AI文本优化成功', processed_text.substring(0, 50) + '...');
-                    }
-                  } else {
-                    if (window.electronAPI && window.electronAPI.log) {
-                      window.electronAPI.log('error', 'AI文本优化失败:', result);
-                    }
-                  }
-                } catch (err) {
-                  if (window.electronAPI && window.electronAPI.log) {
-                    window.electronAPI.log('error', 'AI文本优化捕获到错误:', err);
-                  }
-                }
+          const useAI = await window.electronAPI.getSetting('enable_ai_optimization', false);
+          const commandMode = await window.electronAPI.getCommandMode?.() === true;
+          setIsOptimizing(useAI && !commandMode);
+          const finalized = await finalizeTranscript({
+            rawText: raw_text,
+            polishingEnabled: useAI,
+            commandMode,
+            transcriptionData,
+            processText: async (text, mode) => {
+              const result = await window.electronAPI.processText(text, mode);
+              if (result?.success && shouldConvert && targetLang === 'zh-TW') {
+                return { ...result, text: convertText(result.text, 'zh-TW') };
               }
+              return result;
+            },
+            saveTranscription: (data) => window.electronAPI.saveTranscription(data),
+          });
+          setIsOptimizing(false);
 
-              // 保存转录数据（只保存一次）
-              if (window.electronAPI) {
-                if (window.electronAPI && window.electronAPI.log) {
-                  window.electronAPI.log('info', '准备保存转录数据:', finalData);
-                }
-                const savedResult = await window.electronAPI.saveTranscription(finalData);
-                if (window.electronAPI && window.electronAPI.log) {
-                  window.electronAPI.log('info', '转录数据保存成功:', savedResult);
-                }
+          if (finalized.cancelled) return { ...transcriptionResult, cancelled: true };
 
-                // 通知UI更新并触发复制操作
-                if (useAI && finalData.processed_text && finalData.processed_text !== raw_text) {
-                  // 有AI优化结果时
-                  const enhancedResult = {
-                    ...transcriptionResult,
-                    text: finalData.processed_text,
-                    processed_text: finalData.processed_text,
-                    enhanced_by_ai: true,
-                  };
-                  if (window.onAIOptimizationComplete) {
-                    window.onAIOptimizationComplete(enhancedResult);
-                  }
-                } else {
-                  // 没有AI优化或AI优化失败时，使用原始文本
-                  const finalResult = {
-                    ...transcriptionResult,
-                    text: raw_text,
-                    enhanced_by_ai: false,
-                  };
-                  if (window.onAIOptimizationComplete) {
-                    window.onAIOptimizationComplete(finalResult);
-                  }
-                }
-              }
-            } catch (err) {
-              if (window.electronAPI && window.electronAPI.log) {
-                window.electronAPI.log('error', '处理和保存转录时出错:', err);
-              }
-            } finally {
-              setIsOptimizing(false);
-            }
-          }, 100);
+          if (window.onAIOptimizationComplete) {
+            await window.onAIOptimizationComplete({
+              ...transcriptionResult,
+              success: true,
+              text: finalized.finalText,
+              enhanced_by_ai: finalized.polished,
+              issue: finalized.issue,
+            });
+          }
 
           return { ...transcriptionResult, enhanced_by_ai: false };
         } else {
@@ -506,6 +460,7 @@ export const useRecording = (modelStatus) => {
       throw new Error(t('errors.audioProcessingFailed', { error: err.message }));
     } finally {
       processingRef.current.isProcessingAudio = false;
+      setIsOptimizing(false);
     }
   }, [t]);
 
@@ -579,7 +534,9 @@ export const useRecording = (modelStatus) => {
     cleanup();
     setIsRecording(false);
     setIsProcessing(false);
+    setIsOptimizing(false);
     setError(null);
+    pipelineGateRef.current.finish();
   }, [cleanup, stopPrecogTimer]);
 
   // 获取录音权限状态

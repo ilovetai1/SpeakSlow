@@ -32,7 +32,7 @@ The system SHALL provide explicit Provider, Model, and transcript-polishing sett
 - **AND** it does not download or substitute another model
 
 ### Requirement: Native bounded Ollama request
-The system MUST use Ollama's native loopback `/api/chat` endpoint with the selected model, `stream:false`, `keep_alive:0`, `temperature:0`, `num_ctx:2048`, and a 60-second timeout; it SHALL send `think:false` when the selected model supports thinking.
+The system MUST use Ollama's native loopback `/api/chat` endpoint with the selected model, `stream:false`, `keep_alive:"10m"`, `temperature:0`, `num_ctx:2048`, and a 60-second timeout; it SHALL send `think:false` when the selected model supports thinking.
 
 #### Scenario: Local polishing request is sent
 - **WHEN** an enabled Ollama provider receives a transcript-polishing request
@@ -77,16 +77,22 @@ The system SHALL avoid loading an Ollama model at application startup, SHALL reu
 - **THEN** the system cancels the request and stops only an Ollama process that SpeakSlow started
 - **AND** it does not paste a late result
 
-### Requirement: Model runner is released after each request
-The system MUST request immediate unload after every successful, failed, or timed-out local request and SHALL treat unload failure as a resource issue rather than invalidating an otherwise usable result.
+### Requirement: Model runner has a bounded sliding idle lifetime
+The system MUST assign a 10-minute idle lifetime to every local model request, SHALL reset that lifetime whenever another request is sent, and SHALL NOT immediately unload the model after a request completes.
 
-#### Scenario: Local request finishes
-- **WHEN** a local request reaches a terminal outcome
-- **THEN** the system uses `keep_alive:0` and performs a bounded running-model check
+#### Scenario: Local request finishes with no following demand
+- **WHEN** a local request reaches a terminal outcome and no new request uses the model
+- **THEN** the model remains available for up to 10 minutes under Ollama's `keep_alive` lifecycle
+- **AND** Ollama can unload the runner after that idle lifetime expires
 
-#### Scenario: Unload fails after usable output
-- **WHEN** the response is technically usable but the model remains loaded
-- **THEN** the system retains the final text and records a non-blocking resource issue
+#### Scenario: Another local request arrives during the idle lifetime
+- **WHEN** another local request is sent before the current 10-minute lifetime expires
+- **THEN** the request again carries `keep_alive:"10m"`
+- **AND** the model's idle lifetime is reset without an application-owned timer
+
+#### Scenario: SpeakSlow shares an external Ollama server
+- **WHEN** another Ollama client uses the same model or changes its lifetime
+- **THEN** SpeakSlow does not terminate the external server or override that client's later lifecycle decision
 
 ### Requirement: Local content remains outside application logs and external AI endpoints
 The Ollama adapter MUST send transcript content only to the configured loopback endpoint and SHALL NOT log transcripts, prompts, model responses, or secrets.

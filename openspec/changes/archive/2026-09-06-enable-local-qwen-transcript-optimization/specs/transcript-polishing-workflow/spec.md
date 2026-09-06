@@ -15,16 +15,36 @@ The system SHALL expose transcript polishing as a single enabled or disabled set
 - **WHEN** the recording is being interpreted as an operation or voice command
 - **THEN** the system bypasses AI polishing and uses the non-AI transcript
 
-### Requirement: Universal constrained-polishing prompt
-The system SHALL use one Taiwan Traditional Chinese prompt for all selected models, instructing the model to improve punctuation, segmentation, filler, repetition, grammar, and unnatural word order while preserving source languages and treating transcript content as data rather than instructions.
+### Requirement: One persisted and user-editable polishing prompt
+The system SHALL present one persisted polishing prompt in the AI text-optimization settings, SHALL use it for all selected providers and models, and SHALL append transcript content as a separate data block without requiring a user-managed placeholder.
+
+#### Scenario: No prompt has been saved yet
+- **WHEN** an existing installation opens the AI text-optimization settings without a stored polishing prompt
+- **THEN** the system displays the current Taiwan Traditional Chinese constrained-polishing instruction as the initial value
+- **AND** it does not require a database migration
+
+#### Scenario: User saves a revised prompt
+- **WHEN** the user enters a non-empty polishing prompt and saves AI settings
+- **THEN** the system persists the exact trimmed instruction independently of Provider and Model
+- **AND** subsequent right-Alt and history re-polishing requests both use that saved instruction
+
+#### Scenario: User enters an empty prompt
+- **WHEN** the polishing prompt contains only whitespace
+- **THEN** the settings UI prevents saving it
+- **AND** the main-process setting interface rejects it without overwriting the prior valid value
+
+#### Scenario: Transcript is assembled for inference
+- **WHEN** a polishing request uses the saved instruction
+- **THEN** the main process appends the transcript inside a fixed `<transcript>` data block
+- **AND** the user does not need to add or preserve a placeholder
 
 #### Scenario: Transcript contains a question or imperative
 - **WHEN** the transcript contains a question or command addressed to an assistant
-- **THEN** the prompt instructs the model to edit it as transcript text rather than answer or execute it
+- **THEN** the default prompt instructs the model to edit it as transcript text rather than answer or execute it
 
 #### Scenario: Transcript contains mixed languages
 - **WHEN** the input contains Traditional Chinese and English text
-- **THEN** the prompt instructs the model to preserve the language mixture and not translate it
+- **THEN** the default prompt instructs the model to preserve the language mixture and not translate it
 
 ### Requirement: Only technical response validity is enforced
 The system MUST treat a provider response as usable when the request contract succeeds and yields well-formed, non-empty final text; it SHALL NOT perform semantic consistency validation or deterministic self-correction preprocessing.

@@ -25,14 +25,29 @@ const SETTINGS_TABS = [
   { id: 'about', labelKey: 'settings.tabs.about', icon: Info },
 ];
 
+const inferProvider = (baseUrl = '') => {
+  if (/^https?:\/\/(127\.0\.0\.1|localhost):11434(?:\/|$)/i.test(baseUrl)) return 'ollama';
+  if (baseUrl.includes('api.deepseek.com')) return 'deepseek';
+  if (baseUrl.includes('generativelanguage.googleapis.com')) return 'gemini';
+  if (baseUrl.includes('api.openai.com')) return 'openai';
+  return 'custom';
+};
+
+const formatModelSize = (bytes) => {
+  if (!bytes) return 'size unclear';
+  return `${(bytes / (1024 ** 3)).toFixed(2)} GB`;
+};
+
 const SettingsPage = () => {
   const { t, language, setLanguage, languages } = useTranslation();
   const [activeTab, setActiveTab] = useState('general');
 
   const [settings, setSettings] = useState({
+    ai_provider: "openai",
     ai_api_key: "",
     ai_base_url: "https://api.openai.com/v1",
     ai_model: "gpt-4o-mini",
+    transcript_polishing_prompt: "",
     enable_ai_optimization: false,
     enable_notifications: true,
     enable_streaming_mode: false,
@@ -46,7 +61,8 @@ const SettingsPage = () => {
     auto_line_break: false,           // 依停頓自動分行（issue #17），預設關
     save_audio: true,                 // 保存錄音檔（給重新辨識用），預設開
     audio_retention_days: 30,         // 錄音保留天數（0=永久）
-    // 錄音完成後動作設定（自動貼上已固定開啟，僅保留「自動送出 Enter」）
+    // 錄音完成後動作設定
+    paste_after_transcription: true,
     auto_enter_after_paste: false,    // 貼上後自動送出（完全信任模式）
     // 視窗控制設定
     window_always_on_top: true,       // 視窗置頂
@@ -65,6 +81,11 @@ const SettingsPage = () => {
   const [streamingModelProgress, setStreamingModelProgress] = useState(0);
   const [streamingModelPhase, setStreamingModelPhase] = useState(null);
   const [testResult, setTestResult] = useState(null);
+  const [storedApiKeyProvider, setStoredApiKeyProvider] = useState(null);
+  const [ollamaModels, setOllamaModels] = useState([]);
+  const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false);
+  const [ollamaModelsLoaded, setOllamaModelsLoaded] = useState(false);
+  const [ollamaModelsError, setOllamaModelsError] = useState('');
   const [micDevices, setMicDevices] = useState([]); // 可選的麥克風清單
   const [runtimeInfo, setRuntimeInfo] = useState(null);
   const [appVersion, setAppVersion] = useState(''); // 真實版本號（issue #15：別再寫死 v1.0.1）
@@ -241,11 +262,20 @@ const SettingsPage = () => {
     try {
       setLoading(true);
       if (window.electronAPI) {
-        const allSettings = await window.electronAPI.getAllSettings();
+        const [allSettings, transcriptPolishingPrompt] = await Promise.all([
+          window.electronAPI.getAllSettings(),
+          window.electronAPI.getTranscriptPolishingPrompt(),
+        ]);
+        const aiProvider = allSettings.ai_provider
+          || inferProvider(allSettings.ai_base_url || "https://api.openai.com/v1");
         const loadedSettings = {
-          ai_api_key: allSettings.ai_api_key || "",
+          ai_provider: aiProvider,
+          ai_api_key: "",
           ai_base_url: allSettings.ai_base_url || "https://api.openai.com/v1",
-          ai_model: allSettings.ai_model || "gpt-4o-mini",
+          ai_model: aiProvider === 'ollama'
+            ? allSettings.ollama_model || allSettings.ai_model || ''
+            : allSettings.ai_model || "gpt-4o-mini",
+          transcript_polishing_prompt: transcriptPolishingPrompt,
           enable_ai_optimization: allSettings.enable_ai_optimization === true, // 默认为false
           enable_notifications: allSettings.enable_notifications !== false, // 默认为true
           enable_streaming_mode: allSettings.enable_streaming_mode === true, // 默認關閉
@@ -260,6 +290,7 @@ const SettingsPage = () => {
           save_audio: allSettings.save_audio !== false,
           audio_retention_days: allSettings.audio_retention_days != null ? Number(allSettings.audio_retention_days) : 30,
           // 錄音完成後動作設定
+          paste_after_transcription: allSettings.paste_after_transcription !== false,
           auto_enter_after_paste: allSettings.auto_enter_after_paste === true, // 默認不自動送出
           // 視窗控制設定
           window_always_on_top: allSettings.window_always_on_top !== false, // 默認置頂
@@ -272,6 +303,7 @@ const SettingsPage = () => {
           })()
         };
         setSettings(prev => ({ ...prev, ...loadedSettings }));
+        setStoredApiKeyProvider(allSettings.has_ai_api_key ? aiProvider : null);
         
         // 检查是否使用自定义模型
         const predefinedModels = ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner", "gpt-4o", "gpt-4o-mini", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro", "gemini-3.5-flash", "qwen2.5", "qwen2.5:3b", "llama3.2"];
@@ -287,14 +319,32 @@ const SettingsPage = () => {
 
   // 保存设置
   const saveSettings = async () => {
+    const transcriptPolishingPrompt = settings.transcript_polishing_prompt.trim();
+    if (!transcriptPolishingPrompt) {
+      toast.error(t('settings.polishingPromptRequired'));
+      return;
+    }
     try {
       setSaving(true);
       if (window.electronAPI) {
         // 保存每个设置项
-        await window.electronAPI.setSetting('ai_api_key', settings.ai_api_key);
+        const enteredApiKey = settings.ai_api_key.trim();
+        if (enteredApiKey) {
+          await window.electronAPI.setSetting('ai_api_key', enteredApiKey);
+          setStoredApiKeyProvider(settings.ai_provider);
+        }
         await window.electronAPI.setSetting('ai_base_url', settings.ai_base_url);
         await window.electronAPI.setSetting('ai_model', settings.ai_model);
+        await window.electronAPI.setSetting('ai_provider', settings.ai_provider);
+        if (settings.ai_provider === 'ollama') {
+          await window.electronAPI.setSetting('ollama_model', settings.ai_model);
+        }
+        await window.electronAPI.setTranscriptPolishingPrompt(transcriptPolishingPrompt);
         await window.electronAPI.setSetting('enable_ai_optimization', settings.enable_ai_optimization);
+        setSettings((current) => ({
+          ...current,
+          transcript_polishing_prompt: transcriptPolishingPrompt,
+        }));
         
         toast.success(t('settings.saveSuccess'));
       }
@@ -413,6 +463,7 @@ const SettingsPage = () => {
   const applyGeminiConfig = () => {
     setSettings(prev => ({
       ...prev,
+      ai_provider: "gemini",
       ai_base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
       ai_model: "gemini-2.5-flash",
       // 換到不同供應商就清空 key（別帶著別家的 key 打 Gemini → 一定失敗）
@@ -423,13 +474,18 @@ const SettingsPage = () => {
   };
 
   // Ollama（本地 LLM，免 API key、全離線）
-  const applyOllamaConfig = () => {
+  const applyOllamaConfig = async () => {
+    const savedModel = await window.electronAPI?.getSetting?.('ollama_model', '');
+    const preferredModel = savedModel
+      || ollamaModels.find((model) => model.name === 'qwen3:1.7b')?.name
+      || '';
     setSettings(prev => ({
       ...prev,
-      ai_base_url: "http://localhost:11434/v1",
-      ai_api_key: prev.ai_api_key || "ollama",
-      ai_model: "qwen2.5"
+      ai_provider: "ollama",
+      ai_base_url: "http://127.0.0.1:11434",
+      ai_model: preferredModel,
     }));
+    setOllamaModelsLoaded(false);
     setCustomModel(true);
     toast.info(t('settings.configApplied', { provider: t('settings.ollamaLocal') }));
   };
@@ -438,6 +494,7 @@ const SettingsPage = () => {
   const resetToOpenAI = () => {
     setSettings(prev => ({
       ...prev,
+      ai_provider: "openai",
       ai_base_url: "https://api.openai.com/v1",
       ai_model: "gpt-4o-mini",
       ai_api_key: prev.ai_base_url === "https://api.openai.com/v1" ? prev.ai_api_key : ""
@@ -450,6 +507,7 @@ const SettingsPage = () => {
   const applyDeepSeekConfig = () => {
     setSettings(prev => ({
       ...prev,
+      ai_provider: "deepseek",
       ai_base_url: "https://api.deepseek.com",
       ai_model: "deepseek-v4-flash",
       ai_api_key: prev.ai_base_url === "https://api.deepseek.com" ? prev.ai_api_key : ""
@@ -465,7 +523,9 @@ const SettingsPage = () => {
       setTestResult(null);
       
       // 验证当前输入的配置
-      if (!settings.ai_api_key.trim()) {
+      const enteredApiKey = settings.ai_api_key.trim();
+      const canUseStoredApiKey = storedApiKeyProvider === settings.ai_provider;
+      if (settings.ai_provider !== 'ollama' && !enteredApiKey && !canUseStoredApiKey) {
         setTestResult({
           available: false,
           error: t('settings.configIncompleteDesc'),
@@ -480,7 +540,9 @@ const SettingsPage = () => {
       if (window.electronAPI) {
         // 使用当前页面的配置进行测试，而不是已保存的配置
         const testConfig = {
-          ai_api_key: settings.ai_api_key.trim(),
+          ai_provider: settings.ai_provider,
+          ai_api_key: enteredApiKey || undefined,
+          use_saved_api_key: !enteredApiKey && canUseStoredApiKey,
           ai_base_url: settings.ai_base_url.trim() || 'https://api.openai.com/v1',
           ai_model: settings.ai_model.trim() || 'gpt-4o-mini'
         };
@@ -512,6 +574,38 @@ const SettingsPage = () => {
     }
   };
 
+  const refreshOllamaModels = async () => {
+    setOllamaModelsLoading(true);
+    setOllamaModelsError('');
+    try {
+      const result = await window.electronAPI?.listOllamaModels?.();
+      if (!result?.success) throw new Error(result?.error || '無法讀取 Ollama 模型');
+      const models = result.models || [];
+      setOllamaModels(models);
+      setOllamaModelsLoaded(true);
+
+      const savedModel = await window.electronAPI?.getSetting?.('ollama_model', '');
+      setSettings((current) => {
+        if (current.ai_provider !== 'ollama') return current;
+        if (savedModel) return { ...current, ai_model: savedModel };
+        const preferred = models.find((model) => model.name === 'qwen3:1.7b');
+        return preferred ? { ...current, ai_model: preferred.name } : current;
+      });
+    } catch (error) {
+      setOllamaModels([]);
+      setOllamaModelsLoaded(true);
+      setOllamaModelsError(error.message);
+    } finally {
+      setOllamaModelsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (settings.ai_provider === 'ollama' && !ollamaModelsLoaded && !ollamaModelsLoading) {
+      refreshOllamaModels();
+    }
+  }, [settings.ai_provider, ollamaModelsLoaded, ollamaModelsLoading]);
+
   // 关闭窗口
   const handleClose = () => {
     if (window.electronAPI) {
@@ -529,6 +623,9 @@ const SettingsPage = () => {
       </div>
     );
   }
+
+  const hasUsableApiKey = Boolean(settings.ai_api_key.trim())
+    || storedApiKeyProvider === settings.ai_provider;
 
   return (
     <div className="h-screen bg-gradient-to-br from-slate-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex flex-col">
@@ -1168,7 +1265,7 @@ const SettingsPage = () => {
               </div>
 
               <div className="space-y-4">
-                {/* 自動貼上：已固定開啟（不再提供開關，避免關掉後 TypeLess 失效） */}
+                {/* 自動貼上與潤稿、Enter 各自獨立 */}
                 <div className="flex items-center justify-between">
                   <div>
                     <label className="text-sm font-medium text-gray-800 dark:text-gray-200">
@@ -1178,7 +1275,22 @@ const SettingsPage = () => {
                       {t('settings.autoPasteDesc')}
                     </p>
                   </div>
-                  <span className="text-xs font-medium text-green-600 dark:text-green-400 whitespace-nowrap">{t('settings.alwaysOn')}</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={settings.paste_after_transcription}
+                    onClick={() => handleToggleChange('paste_after_transcription', !settings.paste_after_transcription)}
+                    className={`${
+                      settings.paste_after_transcription ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+                    } cursor-pointer relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`${
+                        settings.paste_after_transcription ? 'translate-x-4' : 'translate-x-0'
+                      } inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+                    />
+                  </button>
                 </div>
 
                 {/* 貼上後自動送出開關（完全信任模式） */}
@@ -1366,6 +1478,7 @@ const SettingsPage = () => {
                    type="button"
                    role="switch"
                    aria-checked={settings.enable_ai_optimization}
+                   disabled={settings.ai_provider === 'ollama' && !settings.enable_ai_optimization && ollamaModelsLoaded && !ollamaModels.some((model) => model.name === settings.ai_model)}
                    onClick={() => handleToggleChange('enable_ai_optimization', !settings.enable_ai_optimization)}
                    className={`${
                      settings.enable_ai_optimization ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
@@ -1380,6 +1493,31 @@ const SettingsPage = () => {
                  </button>
                </div>
 
+               <div>
+                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                   Provider
+                 </label>
+                 <select
+                   value={settings.ai_provider}
+                   onChange={(event) => {
+                     const provider = event.target.value;
+                     if (provider === 'ollama') applyOllamaConfig();
+                     else if (provider === 'deepseek') applyDeepSeekConfig();
+                     else if (provider === 'gemini') applyGeminiConfig();
+                     else if (provider === 'openai') resetToOpenAI();
+                     else setSettings((current) => ({ ...current, ai_provider: 'custom' }));
+                   }}
+                   className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                 >
+                   <option value="ollama">Ollama（本機）</option>
+                   <option value="deepseek">DeepSeek</option>
+                   <option value="openai">OpenAI</option>
+                   <option value="gemini">Gemini</option>
+                   <option value="custom">Custom endpoint</option>
+                 </select>
+               </div>
+
+               {settings.ai_provider !== 'ollama' && (<>
                {/* API Key */}
                 <div>
                   <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1429,7 +1567,61 @@ const SettingsPage = () => {
                     {t('settings.baseUrlDesc')}
                   </p>
                 </div>
+               </>)}
 
+                {settings.ai_provider === 'ollama' ? (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                      本機模型
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOllamaModelsLoaded(false);
+                        refreshOllamaModels();
+                      }}
+                      disabled={ollamaModelsLoading}
+                      className="text-xs px-2 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded disabled:opacity-50"
+                    >
+                      {ollamaModelsLoading ? '讀取中…' : '重新整理'}
+                    </button>
+                  </div>
+                  <select
+                    value={settings.ai_model}
+                    onChange={async (event) => {
+                      const model = event.target.value;
+                      setSettings((current) => ({ ...current, ai_model: model }));
+                      await window.electronAPI?.setSetting?.('ai_model', model);
+                      await window.electronAPI?.setSetting?.('ollama_model', model);
+                    }}
+                    disabled={ollamaModelsLoading || ollamaModels.length === 0}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
+                  >
+                    {settings.ai_model && !ollamaModels.some((model) => model.name === settings.ai_model) && (
+                      <option value={settings.ai_model}>{settings.ai_model}（目前無法使用）</option>
+                    )}
+                    {!settings.ai_model && <option value="">請選擇模型</option>}
+                    {ollamaModels.map((model) => (
+                      <option key={model.name} value={model.name}>
+                        {model.name} · {formatModelSize(model.size)} · {model.parameterSize || 'parameters unclear'} · {model.quantization || 'quantization unclear'}
+                      </option>
+                    ))}
+                  </select>
+                  {ollamaModelsError && (
+                    <p className="mt-1 text-xs text-red-600 dark:text-red-400">{ollamaModelsError}</p>
+                  )}
+                  {ollamaModels.find((model) => model.name === settings.ai_model)?.size > 2 * (1024 ** 3) && (
+                    <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                      此模型超過 2 GB，執行時可能明顯增加記憶體用量。
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    只列出本機可完成文字生成、且非明確 Cloud 的模型；不會自動下載模型。
+                  </p>
+                </div>
+                ) : (
+                <>
                 {/* Model */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
@@ -1513,6 +1705,7 @@ const SettingsPage = () => {
                           setSettings(prev => ({
                             ...prev,
                             ai_model: model,
+                            ai_provider: inferProvider(baseUrl),
                             ai_base_url: baseUrl,
                             ...(providerChanged ? { ai_api_key: isOllama ? (prev.ai_api_key || 'ollama') : '' } : {})
                           }));
@@ -1536,11 +1729,6 @@ const SettingsPage = () => {
                           <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
                           <option value="gemini-2.5-pro">{t('settings.modelOptions.geminiPro')}</option>
                           <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
-                        </optgroup>
-                        <optgroup label={t('settings.modelGroups.ollama')}>
-                          <option value="qwen2.5">{t('settings.modelOptions.qwen')}</option>
-                          <option value="qwen2.5:3b">{t('settings.modelOptions.qwenFast')}</option>
-                          <option value="llama3.2">Llama 3.2</option>
                         </optgroup>
                       </select>
                     )}
@@ -1572,6 +1760,42 @@ const SettingsPage = () => {
 
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     {t('settings.aiModelDesc')}
+                  </p>
+                </div>
+                </>
+                )}
+
+                <div>
+                  <label
+                    htmlFor="transcript-polishing-prompt"
+                    className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  >
+                    {t('settings.polishingPrompt')}
+                  </label>
+                  <textarea
+                    id="transcript-polishing-prompt"
+                    value={settings.transcript_polishing_prompt}
+                    onChange={(event) => handleInputChange('transcript_polishing_prompt', event.target.value)}
+                    rows={10}
+                    aria-describedby="transcript-polishing-prompt-description transcript-polishing-prompt-warning"
+                    className="w-full min-h-48 resize-y px-3 py-2 text-sm leading-6 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                  <div className="mt-1 flex items-start justify-between gap-4">
+                    <p
+                      id="transcript-polishing-prompt-description"
+                      className="text-xs text-gray-500 dark:text-gray-400"
+                    >
+                      {t('settings.polishingPromptDesc')}
+                    </p>
+                    <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                      {t('settings.polishingPromptChars', { count: [...settings.transcript_polishing_prompt].length })}
+                    </span>
+                  </div>
+                  <p
+                    id="transcript-polishing-prompt-warning"
+                    className="mt-1 text-xs text-amber-600 dark:text-amber-400"
+                  >
+                    {t('settings.polishingPromptWarning')}
                   </p>
                 </div>
               </div>
@@ -1662,7 +1886,7 @@ const SettingsPage = () => {
 
                 <button
                   onClick={saveSettings}
-                  disabled={saving || !settings.ai_api_key}
+                  disabled={saving || !settings.ai_model || !settings.transcript_polishing_prompt.trim() || (settings.ai_provider !== 'ollama' && !hasUsableApiKey)}
                   className="flex items-center space-x-2 px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {saving ? (

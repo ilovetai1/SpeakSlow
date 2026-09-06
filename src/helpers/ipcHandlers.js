@@ -30,6 +30,10 @@ class IPCHandlers {
     require("./ipc/emoji")(this);
   }
 
+  shutdown() {
+    this.aiProcessor.shutdown();
+  }
+
 
 }
 
