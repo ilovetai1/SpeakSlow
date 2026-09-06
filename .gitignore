@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.venv/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -158,6 +159,7 @@ poc-sherpa/sherpa-onnx-paraformer-zh-2023-09-14/model.int8.onnx
 # sherpa-onnx 標點模型（下載取得，勿提交大檔）
 poc-sherpa/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12/model.onnx
 poc-sherpa/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12/tokens.json
+poc-sherpa/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/
 # sherpa-onnx 串流 Zipformer 模型（下載取得）
 poc-sherpa/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/*.onnx
 # sherpa-onnx Whisper small（精準/重辨救援，下載取得，勿提交大檔）

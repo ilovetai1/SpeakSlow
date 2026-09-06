@@ -220,6 +220,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("validate-hotkey", accelerator, excludeActionId),
   setActionHotkey: (actionId, accelerator) =>
     ipcRenderer.invoke("set-action-hotkey", actionId, accelerator),
+  setHotkeyEnabled: (actionId, enabled) =>
+    ipcRenderer.invoke("set-hotkey-enabled", actionId, enabled),
   resetHotkeys: (actionId) => ipcRenderer.invoke("reset-hotkeys", actionId),
   initCustomHotkeys: () => ipcRenderer.invoke("init-custom-hotkeys"),
 

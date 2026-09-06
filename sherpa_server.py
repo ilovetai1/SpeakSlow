@@ -13,6 +13,7 @@ import logging
 import traceback
 import signal
 import tempfile
+import threading
 import wave
 import numpy as np
 
@@ -252,7 +253,9 @@ class SherpaServer:
         self.streaming_recognizer = None  # 串流辨識器 (Zipformer)
         self.vad = None  # Silero VAD 模型
         self.whisper_recognizer = None  # Whisper small（精準/重辨救援，延遲載入）
-        self.punc_model = None  # sherpa-onnx ct-transformer 標點模型
+        self.punc_model = None  # sherpa-onnx INT8 ct-transformer（首次需要標點時載入）
+        self._punc_model_load_attempted = False
+        self._punc_model_lock = threading.Lock()
         self.initialized = False
         self.streaming_initialized = False
         self.running = True
@@ -381,11 +384,29 @@ class SherpaServer:
         )
 
     def _find_punct_model_dir(self):
-        """尋找 sherpa-onnx 標點模型目錄 (ct-transformer)"""
-        return os.path.join(
-            self._poc_sherpa_dir(),
-            "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12"
+        """尋找 INT8 ct-transformer 標點模型目錄。"""
+        model_name = (
+            "sherpa-onnx-punct-ct-transformer-zh-en-"
+            "vocab272727-2024-04-12-int8"
         )
+        roots = [self._poc_sherpa_dir()]
+
+        # userData 只要有其他模型就會被 _poc_sherpa_dir() 優先選中；
+        # 升級後它可能尚未含 INT8 標點，因此仍要繼續找打包與專案內模型。
+        if getattr(sys, "frozen", False):
+            roots.append(os.path.join(os.path.dirname(sys.executable), "poc-sherpa"))
+        roots.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "poc-sherpa"))
+        roots.append(os.path.expanduser("~/.cache/sherpa-onnx"))
+
+        candidates = []
+        for root in roots:
+            candidate = self._to_ascii_path(os.path.join(root, model_name))
+            if candidate not in candidates:
+                candidates.append(candidate)
+            if os.path.isfile(os.path.join(candidate, "model.int8.onnx")):
+                return candidate
+
+        return candidates[0]
 
     def _signal_handler(self, signum, frame):
         logger.info(f"收到信號 {signum}，準備退出...")
@@ -708,45 +729,46 @@ class SherpaServer:
             self.precog = None
         return {"success": True}
 
-    def _init_punctuation_model(self):
-        """在背景線程初始化 sherpa-onnx 標點模型（ct-transformer，免 torch）"""
-        import threading
+    def _load_punctuation_model(self):
+        """同步載入 INT8 標點模型；只由首次標點請求觸發。"""
+        try:
+            import time
+            import sherpa_onnx
 
-        def load_punc_model():
-            try:
-                import time
-                import sherpa_onnx
-                start_time = time.time()
-
-                model_path = os.path.join(self.punct_model_dir, "model.onnx")
-                if not os.path.exists(model_path):
-                    logger.warning(
-                        f"標點模型不存在，將使用規則式標點: {model_path}"
-                    )
-                    self.punc_model = None
-                    return
-
-                logger.info("正在載入 sherpa-onnx 標點模型 ct-transformer（背景）...")
-
-                config = sherpa_onnx.OfflinePunctuationConfig(
-                    model=sherpa_onnx.OfflinePunctuationModelConfig(
-                        ct_transformer=model_path,
-                        num_threads=self.num_threads,
-                        provider="cpu",  # 標點模型小，CPU 已足夠快且最穩定
-                    )
-                )
-                self.punc_model = sherpa_onnx.OfflinePunctuation(config)
-
-                load_time = time.time() - start_time
-                logger.info(f"sherpa-onnx 標點模型載入完成，耗時: {load_time:.2f} 秒")
-
-            except Exception as e:
-                logger.warning(f"標點模型載入失敗，將使用規則式標點: {e}")
+            start_time = time.time()
+            model_path = os.path.join(self.punct_model_dir, "model.int8.onnx")
+            if not os.path.exists(model_path):
+                logger.warning(f"INT8 標點模型不存在，將使用規則式標點: {model_path}")
                 self.punc_model = None
+                return None
 
-        # 在背景線程載入，不阻塞主服務
-        thread = threading.Thread(target=load_punc_model, daemon=True)
-        thread.start()
+            logger.info("首次需要標點，載入 sherpa-onnx INT8 ct-transformer...")
+            config = sherpa_onnx.OfflinePunctuationConfig(
+                model=sherpa_onnx.OfflinePunctuationModelConfig(
+                    ct_transformer=model_path,
+                    num_threads=1,
+                    provider="cpu",
+                )
+            )
+            self.punc_model = sherpa_onnx.OfflinePunctuation(config)
+            load_time = time.time() - start_time
+            logger.info(f"sherpa-onnx INT8 標點模型載入完成，耗時: {load_time:.2f} 秒")
+            return self.punc_model
+        except Exception as e:
+            logger.warning(f"INT8 標點模型載入失敗，將使用規則式標點: {e}")
+            self.punc_model = None
+            return None
+
+    def _ensure_punctuation_model(self):
+        """以 thread-safe 方式保證每個後端進程最多嘗試載入一次。"""
+        if self.punc_model is not None or self._punc_model_load_attempted:
+            return self.punc_model
+
+        with self._punc_model_lock:
+            if self.punc_model is not None or self._punc_model_load_attempted:
+                return self.punc_model
+            self._punc_model_load_attempted = True
+            return self._load_punctuation_model()
 
     def _preprocess_audio(self, samples):
         """音頻預處理：正規化音量、降噪"""
@@ -782,10 +804,11 @@ class SherpaServer:
 
         text = text.strip()
 
-        # 優先使用 sherpa-onnx 標點模型
-        if self.punc_model is not None:
+        # 模型延遲到首次真正需要標點時才載入，避免 App 閒置也常駐這筆記憶體。
+        punc_model = self._ensure_punctuation_model()
+        if punc_model is not None:
             try:
-                punctuated = self.punc_model.add_punctuation(text)
+                punctuated = punc_model.add_punctuation(text)
                 if punctuated:
                     logger.debug(f"標點結果: {punctuated}")
                     return punctuated
@@ -854,9 +877,6 @@ class SherpaServer:
             load_time = time.time() - start_time
             self.initialized = True
             logger.info(f"sherpa-onnx 初始化完成，耗時: {load_time:.2f} 秒，執行緒: {self.num_threads}")
-
-            # 嘗試載入 FunASR 標點模型
-            self._init_punctuation_model()
 
             return {
                 "success": True,

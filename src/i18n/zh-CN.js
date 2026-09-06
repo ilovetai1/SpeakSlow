@@ -242,7 +242,7 @@ export default {
     // 快捷键分页
     hotkeysTab: {
       title: '快捷键设置',
-      description: '自定义应用程序的快捷键。点击「录制」后按下想要的快捷键组合。',
+      description: '每个快捷键都能独立启用或停用。点击「录制」后可更换快捷键组合。',
       resetAll: '重置全部',
       resetToDefault: '重置为默认',
       resetDone: '已重置为默认快捷键',
@@ -254,6 +254,12 @@ export default {
       record: '录制',
       updated: '快捷键已更新为 {hotkey}',
       setFailed: '设置失败',
+      toggleFailed: '无法切换快捷键状态',
+      enabled: '已启用',
+      disabled: '已停用',
+      enableAction: '启用或停用「{action}」快捷键',
+      enabledDone: '已启用「{action}」快捷键',
+      disabledDone: '已停用「{action}」快捷键',
       typelessFixed: '右 Alt / 右 Ctrl（单击切换）',
       spaceKey: '空格',
       tipLabel: '提示：',

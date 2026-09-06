@@ -242,7 +242,7 @@ export default {
     // Hotkeys tab
     hotkeysTab: {
       title: 'Hotkey Settings',
-      description: 'Customize the app hotkeys. Click "Record" and press the combination you want.',
+      description: 'Enable or disable each hotkey independently. Click "Record" to change a key combination.',
       resetAll: 'Reset All',
       resetToDefault: 'Reset to default',
       resetDone: 'Reset to the default hotkey',
@@ -254,6 +254,12 @@ export default {
       record: 'Record',
       updated: 'Hotkey updated to {hotkey}',
       setFailed: 'Failed to set hotkey',
+      toggleFailed: 'Failed to change hotkey status',
+      enabled: 'Enabled',
+      disabled: 'Disabled',
+      enableAction: 'Enable or disable the {action} hotkey',
+      enabledDone: 'Enabled the {action} hotkey',
+      disabledDone: 'Disabled the {action} hotkey',
       typelessFixed: 'Right Alt / Right Ctrl (single press to toggle)',
       spaceKey: 'Space',
       tipLabel: 'Tip: ',

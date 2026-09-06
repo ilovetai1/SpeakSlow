@@ -612,16 +612,29 @@ export default function App() {
     }
   }, []);
 
-  // 啟用 TypeLess 模式（右 Alt 已是唯一錄音方式，固定一律啟用，不再受設定開關控制）
+  // 初始化 TypeLess；是否啟用由快捷鍵設定中的獨立開關決定。
   useEffect(() => {
-    const enableTypeless = async () => {
+    let active = true;
+    const initializeTypeless = async () => {
       if (window.electronAPI) {
-        setTypelessMode(true);
-        // 觸發鍵由主進程固定為右 Alt（setRightAltToggle），這裡傳入值會被忽略
-        await window.electronAPI.enableTypelessMode('AltRight');
+        const result = await window.electronAPI.enableTypelessMode('AltRight');
+        if (active && result.success) {
+          setTypelessMode(result.enabled);
+        }
       }
     };
-    enableTypeless();
+    initializeTypeless();
+
+    const unsubscribe = window.electronAPI?.onHotkeyChanged?.((data) => {
+      if (data.actionId === 'typeless-recording' && typeof data.enabled === 'boolean') {
+        setTypelessMode(data.enabled);
+      }
+    });
+
+    return () => {
+      active = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   // 統一的錄音狀態（根據模式選擇）

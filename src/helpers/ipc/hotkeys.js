@@ -1,7 +1,30 @@
-const { ipcMain } = require("electron");
+const { ipcMain, BrowserWindow } = require("electron");
 const { stopSpeaking } = require("../tts");
 
+const TYPELESS_ACTION_ID = 'typeless-recording';
+const HOTKEY_ENABLED_SETTING = 'hotkey_enabled';
+
 module.exports = function register(ctx) {
+  const getDefaultEnabledStates = () => ({
+    [TYPELESS_ACTION_ID]: true,
+    ...Object.fromEntries(
+      Object.keys(ctx.hotkeyManager.getDefaultHotkeys()).map(actionId => [actionId, true])
+    ),
+  });
+
+  const getEnabledStates = async () => {
+    const savedStates = await ctx.databaseManager.getSetting(HOTKEY_ENABLED_SETTING, null);
+    return { ...getDefaultEnabledStates(), ...(savedStates || {}) };
+  };
+
+  const broadcastHotkeyChange = (data) => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) {
+        win.webContents.send('hotkey-changed', data);
+      }
+    });
+  };
+
   // 热键管理 - 添加发送者跟踪机制
   ctx.hotkeyRegisteredSenders = new Set(); // 跟踪已注册热键的发送者
 
@@ -256,10 +279,16 @@ module.exports = function register(ctx) {
         }
       });
 
-      // 啟用 TypeLess 模式
-      ctx.typelessManager.enable();
+      // 依使用者保存的獨立開關決定是否啟用，不在視窗重載時覆蓋停用狀態。
+      const enabledStates = await getEnabledStates();
+      const enabled = enabledStates[TYPELESS_ACTION_ID] !== false;
+      if (enabled) {
+        ctx.typelessManager.enable();
+      } else {
+        ctx.typelessManager.disable();
+      }
 
-      return { success: true };
+      return { success: true, enabled };
     } catch (error) {
       ctx.logger.error("啟用 TypeLess 模式失敗:", error);
       return { success: false, error: error.message };
@@ -356,6 +385,7 @@ module.exports = function register(ctx) {
       const savedHotkeys = await ctx.databaseManager.getSetting('custom_hotkeys', null);
       const defaultHotkeys = ctx.hotkeyManager.getDefaultHotkeys();
       const currentBindings = ctx.hotkeyManager.getHotkeyBindings();
+      const enabled = await getEnabledStates();
 
       // 合併：預設值為基礎，已保存的設定覆蓋（確保新增的快捷鍵也會顯示）
       const mergedHotkeys = { ...defaultHotkeys, ...(savedHotkeys || {}), ...currentBindings };
@@ -364,6 +394,7 @@ module.exports = function register(ctx) {
         success: true,
         hotkeys: mergedHotkeys,
         defaults: defaultHotkeys,
+        enabled,
       };
     } catch (error) {
       ctx.logger.error("獲取快捷鍵設定失敗:", error);
@@ -412,21 +443,65 @@ module.exports = function register(ctx) {
 
       if (result.success) {
         // 保存到資料庫
-        const currentHotkeys = await ctx.databaseManager.getSetting('custom_hotkeys', {});
+        const currentHotkeys = await ctx.databaseManager.getSetting('custom_hotkeys', null) || {};
         currentHotkeys[actionId] = accelerator;
         await ctx.databaseManager.setSetting('custom_hotkeys', currentHotkeys);
         ctx.logger.info(`快捷鍵已更新: ${actionId} -> ${accelerator}`);
 
         // 廣播快捷鍵變更到所有視窗
-        const { BrowserWindow } = require('electron');
-        BrowserWindow.getAllWindows().forEach(win => {
-          win.webContents.send('hotkey-changed', { actionId, accelerator });
-        });
+        broadcastHotkeyChange({ actionId, accelerator, enabled: true });
       }
 
       return result;
     } catch (error) {
       ctx.logger.error("設置快捷鍵失敗:", error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 獨立啟用或停用單一快捷鍵
+  ipcMain.handle("set-hotkey-enabled", async (event, actionId, enabled) => {
+    try {
+      if (!ctx.hotkeyManager) {
+        return { success: false, error: "快捷鍵管理器未初始化" };
+      }
+      if (typeof enabled !== 'boolean') {
+        return { success: false, error: "快捷鍵啟用狀態必須是布林值" };
+      }
+
+      const defaultEnabledStates = getDefaultEnabledStates();
+      if (!(actionId in defaultEnabledStates)) {
+        return { success: false, error: `未知的快捷鍵操作: ${actionId}` };
+      }
+
+      if (actionId === TYPELESS_ACTION_ID) {
+        if (!ctx.typelessManager) {
+          return { success: false, error: "TypeLess 管理器未初始化" };
+        }
+        if (enabled) {
+          ctx.typelessManager.enable();
+        } else {
+          ctx.typelessManager.disable();
+        }
+      } else if (enabled) {
+        const savedHotkeys = await ctx.databaseManager.getSetting('custom_hotkeys', null);
+        const accelerator = savedHotkeys?.[actionId]
+          || ctx.hotkeyManager.getDefaultHotkeys()[actionId];
+        const result = ctx.hotkeyManager.registerActionHotkey(actionId, accelerator);
+        if (!result.success) return result;
+      } else {
+        ctx.hotkeyManager.unregisterActionHotkey(actionId);
+      }
+
+      const enabledStates = await getEnabledStates();
+      enabledStates[actionId] = enabled;
+      await ctx.databaseManager.setSetting(HOTKEY_ENABLED_SETTING, enabledStates);
+      ctx.logger.info(`快捷鍵已${enabled ? '啟用' : '停用'}: ${actionId}`);
+      broadcastHotkeyChange({ actionId, enabled });
+
+      return { success: true, enabled };
+    } catch (error) {
+      ctx.logger.error("切換快捷鍵狀態失敗:", error);
       return { success: false, error: error.message };
     }
   });
@@ -438,13 +513,41 @@ module.exports = function register(ctx) {
         return { success: false, error: "快捷鍵管理器未初始化" };
       }
 
-      const result = ctx.hotkeyManager.resetToDefault(actionId);
+      const defaults = ctx.hotkeyManager.getDefaultHotkeys();
+      const enabledStates = await getEnabledStates();
+      let result;
+
+      if (actionId) {
+        const defaultAccelerator = defaults[actionId];
+        if (!defaultAccelerator) {
+          return { success: false, error: `未找到操作 ${actionId} 的預設快捷鍵` };
+        }
+        if (enabledStates[actionId] === false) {
+          ctx.hotkeyManager.unregisterActionHotkey(actionId);
+          result = { success: true };
+        } else {
+          result = ctx.hotkeyManager.registerActionHotkey(actionId, defaultAccelerator);
+        }
+      } else {
+        const results = {};
+        for (const [id, accelerator] of Object.entries(defaults)) {
+          if (enabledStates[id] === false) {
+            ctx.hotkeyManager.unregisterActionHotkey(id);
+            results[id] = { success: true, enabled: false };
+          } else {
+            results[id] = ctx.hotkeyManager.registerActionHotkey(id, accelerator);
+          }
+        }
+        result = {
+          success: Object.values(results).every(item => item.success),
+          results,
+        };
+      }
 
       if (result.success) {
         if (actionId) {
           // 更新資料庫中的單個快捷鍵
-          const currentHotkeys = await ctx.databaseManager.getSetting('custom_hotkeys', {});
-          const defaults = ctx.hotkeyManager.getDefaultHotkeys();
+          const currentHotkeys = await ctx.databaseManager.getSetting('custom_hotkeys', null) || {};
           currentHotkeys[actionId] = defaults[actionId];
           await ctx.databaseManager.setSetting('custom_hotkeys', currentHotkeys);
         } else {
@@ -456,7 +559,8 @@ module.exports = function register(ctx) {
 
       return {
         success: result.success,
-        hotkeys: ctx.hotkeyManager.getDefaultHotkeys(),
+        hotkeys: defaults,
+        enabled: enabledStates,
       };
     } catch (error) {
       ctx.logger.error("重設快捷鍵失敗:", error);
@@ -530,6 +634,7 @@ module.exports = function register(ctx) {
       // 從資料庫讀取設定，並與預設值合併（確保新增的快捷鍵也會被註冊）
       const savedHotkeys = await ctx.databaseManager.getSetting('custom_hotkeys', null);
       const defaults = ctx.hotkeyManager.getDefaultHotkeys();
+      const enabledStates = await getEnabledStates();
       // 合併：預設值為基礎，已保存的設定覆蓋
       const hotkeyConfig = { ...defaults, ...(savedHotkeys || {}) };
 
@@ -540,12 +645,18 @@ module.exports = function register(ctx) {
       const results = {};
       for (const [actionId, accelerator] of Object.entries(hotkeyConfig)) {
         if (SKIP_ACTIONS.has(actionId)) continue;
+        if (enabledStates[actionId] === false) {
+          ctx.hotkeyManager.unregisterActionHotkey(actionId);
+          results[actionId] = { success: true, enabled: false };
+          continue;
+        }
         results[actionId] = ctx.hotkeyManager.registerActionHotkey(actionId, accelerator);
       }
 
       return {
         success: true,
         hotkeys: hotkeyConfig,
+        enabled: enabledStates,
         results,
       };
     } catch (error) {

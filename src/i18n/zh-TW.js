@@ -242,7 +242,7 @@ export default {
     // 快捷鍵分頁
     hotkeysTab: {
       title: '快捷鍵設定',
-      description: '自定義應用程式的快捷鍵。點擊「錄製」後按下想要的快捷鍵組合。',
+      description: '每個快捷鍵都能獨立啟用或停用。點擊「錄製」後可更換快捷鍵組合。',
       resetAll: '重設全部',
       resetToDefault: '重設為預設',
       resetDone: '已重設為預設快捷鍵',
@@ -254,6 +254,12 @@ export default {
       record: '錄製',
       updated: '快捷鍵已更新為 {hotkey}',
       setFailed: '設置失敗',
+      toggleFailed: '無法切換快捷鍵狀態',
+      enabled: '已啟用',
+      disabled: '已停用',
+      enableAction: '啟用或停用「{action}」快捷鍵',
+      enabledDone: '已啟用「{action}」快捷鍵',
+      disabledDone: '已停用「{action}」快捷鍵',
       typelessFixed: '右 Alt / 右 Ctrl（單擊切換）',
       spaceKey: '空格',
       tipLabel: '提示：',

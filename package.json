@@ -1,6 +1,6 @@
 {
   "name": "speakslow",
-  "version": "1.0.20",
+  "version": "2.0.0",
   "description": "聲聲慢 SpeakSlow - 專為中文打造、最快的本地語音輸入（sherpa-onnx）",
   "main": "main.js",
   "private": true,
@@ -116,7 +116,8 @@
     "asarUnpack": [
       "sherpa_server.py",
       "text_processing.py",
-      "node_modules/**/*better-sqlite3*/**/*"
+      "node_modules/**/*better-sqlite3*/**/*",
+      "node_modules/**/*uiohook-napi*/**/*"
     ],
     "extraResources": [
       {
@@ -132,8 +133,8 @@
         "to": "sherpa-backend/poc-sherpa/sherpa-onnx-paraformer-zh-small-2024-03-09"
       },
       {
-        "from": "poc-sherpa/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12",
-        "to": "sherpa-backend/poc-sherpa/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12"
+        "from": "poc-sherpa/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8",
+        "to": "sherpa-backend/poc-sherpa/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8"
       },
       {
         "from": "poc-sherpa/silero_vad.onnx",

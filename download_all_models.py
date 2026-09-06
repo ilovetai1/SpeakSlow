@@ -37,10 +37,10 @@ MODELS = [
         "model.int8.onnx",
     ),
     (
-        "標點 ct-transformer",
-        f"{BASE}/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2",
-        "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12",
-        "model.onnx",
+        "標點 ct-transformer INT8",
+        f"{BASE}/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8.tar.bz2",
+        "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8",
+        "model.int8.onnx",
     ),
     (
         "串流辨識 Zipformer",
