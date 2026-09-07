@@ -1,160 +1,195 @@
 <div align="center">
 
-<br/>
-
 <img src="assets/icon.png" width="110" alt="聲聲慢 logo">
 
-# 聲聲慢 (SpeakSlow)
+# 聲聲慢（SpeakSlow）
 
-### 用講的，比打字快好幾倍
+**本機中文語音輸入：錄音、辨識、整理文字，再貼到游標位置。**
 
-**專為中文打造、最快的本地語音輸入。開口說，文字直接落在你游標的位置。全程在你電腦本地跑，一個字都不上雲。免費、開源。**
+語音辨識使用 sherpa-onnx；文字潤稿可選本機 Ollama 或遠端 AI 服務。
 
-<img src="https://img.shields.io/github/stars/Jeffrey0117/SpeakSlow?style=social" alt="Stars">
-<img src="https://img.shields.io/badge/license-Apache_2.0-blue.svg" alt="License">
-<img src="https://img.shields.io/badge/platform-Windows_｜_macOS_｜_Linux-0078D6" alt="Platform">
-<img src="https://img.shields.io/badge/ASR-sherpa--onnx-orange" alt="ASR">
-<img src="https://img.shields.io/badge/100%25-local-success" alt="Local">
-
-🌐 **[官方網站](https://jeffrey0117.github.io/SpeakSlow/)** ・ 📖 **[使用教學](https://jeffrey0117.github.io/SpeakSlow/#/guide)** ・ ⬇️ **[直接下載](#-下載windows--macos--linux)**
+[本 fork](https://github.com/ilovetai1/SpeakSlow) · [Ollama 功能分支](https://github.com/ilovetai1/SpeakSlow/tree/codex/enable-local-ollama-transcript-polishing) · [上游專案](https://github.com/Jeffrey0117/SpeakSlow)
 
 </div>
 
-<br/>
+## 版本與取得方式
 
-> 按一下 **右 Alt / 右 Ctrl** → 講中文 → 文字**自動貼到你游標所在的位置**。
-> 語音辨識**完全在你電腦本地運行**，一個字都不上雲。
+這是 `ilovetai1/SpeakSlow` fork 的 **2.0.0 原始碼分支**，包含原生 Ollama 模型選擇、錄音後潤稿、自訂提示詞與歷史重新潤稿。
 
-<div align="center">
+- **取得本次功能**：使用 `codex/enable-local-ollama-transcript-polishing` 分支，或由維護者提供明確從此分支建置的安裝檔。fork 的 `main` 不代表此功能分支。
+- **本 fork 安裝檔**：查看 [Releases](https://github.com/ilovetai1/SpeakSlow/releases)。截至 2026-09-07 尚未建立 Release；推送原始碼不會自動產生新版安裝檔。
+- **上游安裝檔**：位於 [Jeffrey0117/SpeakSlow Releases](https://github.com/Jeffrey0117/SpeakSlow/releases)，版本與此分支獨立，不能用來確認本次 Ollama 功能。
 
-<img src="assets/demo.gif" width="300" alt="30 秒實測：講完即貼，全程本機">
+## 分享給同仁前必讀
 
-🎬 <a href="https://jeffrey0117.github.io/SpeakSlow/demo.mp4">高畫質影片版</a>（講完即貼，全程本機）
+**只複製 SpeakSlow App，並不會一併安裝 Ollama 或下載語言模型。** 語音辨識與 AI 潤稿是兩套不同的功能：
 
-</div>
+| 要使用的功能 | 同仁電腦需要準備 |
+| --- | --- |
+| 基本錄音、語音辨識、貼上 | 對應作業系統／處理器的 SpeakSlow 安裝檔，完整語音後端與模型，以及麥克風／貼上所需權限 |
+| Ollama 本機潤稿 | 上述條件，加上另外安裝的 Ollama、已下載的本機文字生成模型，以及可連線的本機服務 |
+| 遠端 AI 潤稿 | 可用的網路、服務網址、模型與該服務的 API key；文字會送至所選服務 |
 
-<br/>
+未安裝 Ollama 時，可先關閉「潤稿」使用基本辨識。若已開啟潤稿但服務或模型不可用，錄音流程會顯示「潤稿失敗，已使用原始文字」；這代表辨識有結果，**不代表 AI 潤稿成功**。
 
-## 為什麼有人一天用它講了一萬八千字？
+### macOS 安裝與權限
 
-因為**講話本來就比打字快**，尤其中文。你只是需要一個「講完馬上變乾淨文字、直接落在游標處」的工具，而且不想把聲音上傳到任何地方。
+1. 取得可信來源的安裝檔，把 SpeakSlow 放入 `/Applications`。
+2. 在「系統設定 → 隱私權與安全性」允許麥克風；全域操作與自動貼上需依 App 提示授予「輔助使用」權限。
+3. 先關閉潤稿，錄一小段話，確認能辨識並貼到文字編輯器，再設定 Ollama。
 
-> 「與同為本地端的 WhisperDesktop 相比，聲聲慢的轉譯速度**極快**，中文辨識表現不錯……本身也支援擴充 API KEY，可以再提升精準度。」
-> <br/>出自「電腦王阿達」使用心得
+目前本機驗證使用 Apple Silicon Mac。2026-09-07 檢查的本機 App 使用 **Apple Development** 簽章，沒有附帶公證票證；既有建置設定也不能視為已完成 Developer ID 簽章與公證的發佈流程。**尚未完成其他同仁電腦的首次安裝驗證**。
 
-- 🚀 **極快**：講完約 **0.3 秒**貼上。長講邊錄邊算，101 秒的長講實測快 8 倍。
-- 💬 **為 AI 對話而生**：跟 ChatGPT / Claude / Cursor 講很多話時，用講的比打字快太多，講完直接送出。
-- 🔒 **100% 本地**：聲音不上傳任何伺服器，比雲端服務更私密。
-- 🆓 **免費開源**：不用訂閱、不用註冊。
+若 macOS 顯示無法驗證開發者，請依 [Apple 官方開啟說明](https://support.apple.com/en-us/102445)及公司 IT 規範處理。若顯示「已毀損」，應重新核對安裝檔與簽章，不能直接判定只是系統誤擋。正式分發前應完成 [Developer ID 簽章與公證](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)。
 
-<br/>
+## Ollama 本機潤稿設定
 
-## ⬇️ 下載（Windows / macOS / Linux）
+### 系統條件
 
-<div align="center">
+| 平台 | SpeakSlow 自動啟動 Ollama | 使用條件 |
+| --- | --- | --- |
+| macOS Apple Silicon（M 系列） | 支援，需已安裝 Ollama | 目前已在本機驗證的組合；新版 Ollama 需要 macOS 14 以上 |
+| macOS Intel | 不支援自動啟動 | 需先自行啟動 Ollama，另需對應架構的 SpeakSlow 建置；本分支未完成實機驗證 |
+| Windows / Linux | 不支援自動啟動 | 需先自行啟動 Ollama，另需對應平台的 SpeakSlow 建置；本分支未完成實機驗證 |
 
-| 🪟 Windows | 🍎 macOS (Apple Silicon) | 🐧 Linux |
-|:---:|:---:|:---:|
-| **[下載 .exe](https://github.com/Jeffrey0117/SpeakSlow/releases/latest/download/SpeakSlow-Setup.exe)** | **[下載 .dmg](https://github.com/Jeffrey0117/SpeakSlow/releases/latest/download/SpeakSlow-arm64.dmg)** | **[下載 .AppImage](https://github.com/Jeffrey0117/SpeakSlow/releases/latest/download/SpeakSlow.AppImage)** |
-| 雙擊安裝，AI 模型已內建 | 見下方權限說明 | 直接執行 |
+Ollama 的 macOS 系統需求以 [官方文件](https://docs.ollama.com/macos)為準。此分支的 Ollama 連線固定為 `http://127.0.0.1:11434`，目前不支援改用其他電腦或自訂連接埠。
 
-</div>
+### 第一次設定
 
-> 🍎 **macOS 首次開啟**若顯示「已毀損」，不是檔案壞掉，是未簽章被系統擋。拖進「應用程式」後執行一次：`xattr -cr /Applications/SpeakSlow.app`。全域熱鍵與自動貼上需到「系統設定 → 隱私權與安全性 → 輔助使用」勾選 SpeakSlow。Mac 沒有右 Ctrl，可在設定頁把觸發鍵改成 F8～F10。
+1. 從 [Ollama 官方網站](https://ollama.com/download)安裝並啟動 Ollama。macOS 請放在 `/Applications/Ollama.app`，依首次啟動畫面安裝命令列工具。
+2. 在同仁自己的電腦下載模型。以下以本專案已測試的 `qwen3:1.7b` 為例：
 
-<br/>
+   ```bash
+   ollama pull qwen3:1.7b
+   ollama list
+   ```
 
-## ✨ 它能做什麼
+   `qwen3:1.7b` 的[官方模型檔](https://ollama.com/library/qwen3:1.7b)約 **1.4 GB**；這是下載大小，不是執行時記憶體上限。首次下載需要網路與額外磁碟空間，完成後可在本機離線潤稿。
 
-### 🎙️ 又快又準的本地辨識
-- **本地** sherpa-onnx **Paraformer（int8、非自回歸）**：講完約 **0.3 秒**貼上
-- **為中文 / 台灣優化**：簡轉繁用台灣標準字（「吃」不是「喫」）；中英混用（晶晶體）英文保留原文、不亂翻
-- **長講邊錄邊算**：錄音中先解碼講完的段落，停止後不論講多長都約 0.2 秒出字
-- **防幻聽**：不講話絕不會冒出文字，靜音與環境噪音直接拒絕解碼；長音訊自動 VAD 分段
-- **熱詞 / 自訂字典**：提升人名、產品、術語等專有名詞的準確度
+3. 開啟 SpeakSlow 設定，在 AI 設定區把 **Provider** 選為 **Ollama（本機）**，按「重新整理」。
+4. 在「本機模型」選擇 `qwen3:1.7b` 或其他已安裝的文字生成模型。**不需要 API key**。模型清單會排除只有 embedding 能力的模型與名稱明確標示 Cloud 的模型。
+5. 執行設定頁的連線測試；成功後開啟「潤稿」，儲存設定。可修改「潤稿提示詞」，但不能保存空白提示詞；不需要自行加入逐字稿佔位符。
+6. 錄製一段短句，檢查最終文字。歷史紀錄也可重新潤稿，先預覽，再確認取代最終文字。
 
-### 🧹 乾淨的輸出（以下全部**不需要 AI**、純本地規則）
-- **自動標點**：依語意 + 句末語助詞（嗎 → ？、啊 → ！）
-- **去口吃贅字**：刪掉「呃、嗯、那個、然後…」，但保留正常疊字（慢慢、謝謝）
-- **阿拉伯數字還原**：逐字唸的號碼 / 年份自動變回阿拉伯數字（一二三 → 123、二〇二四 → 2024）
-- **全形英文 → 半形**：`ｈｅｌｌｏ` → `hello`
+Ollama 視窗中目前聊天所選的模型，不會決定 SpeakSlow 使用哪個模型；以 **SpeakSlow 設定頁的模型**為準。沒有先前選擇時，程式會優先選取已安裝的 `qwen3:1.7b`，不會自動下載它。
 
-### ⌨️ 順手的互動
-- **一鍵切換觸發鍵**：按一下開始、再按一下停止並貼上；錄音中 `Esc` 取消。觸發鍵可自訂（右 Alt / 右 Ctrl / F8～F10）
-- **貼到游標處、不污染剪貼簿**：貼上後自動還原你原本的剪貼簿內容
-- **面板一鍵 AI 開關**：不需要潤飾時直接關掉，省 API、要時再開
+### 服務啟動與資源使用
 
-### 🤖 AI 文字優化（可選：要更強再開）
-- 接任何**相容 OpenAI** 的服務：DeepSeek / Gemini / OpenAI，或**本地 Ollama（全離線、免 API key）**
-- 內建為**台灣口語**調校的 prompt：潤飾、糾錯、整理排版
+- SpeakSlow 會先嘗試連接已運行的 Ollama 服務。其他平台只要服務已在上述本機位址運行，也會走相同 API 連線流程，但不等於已完成跨平台實機驗收。
+- Apple Silicon Mac 未有服務運行時，會依序尋找 `/opt/homebrew/bin/ollama`、`/usr/local/bin/ollama`、`/Applications/Ollama.app/Contents/Resources/ollama`，再啟動 `ollama serve`。自訂安裝位置不在此搜尋清單時，需自行啟動服務。
+- 若 Ollama App 或系統服務尚未啟動，可在終端機執行 `ollama serve` 並保持該程序運行；服務已啟動時不必重複執行。指令依據 [Ollama CLI 文件](https://docs.ollama.com/cli)。
+- 程式啟動時不預載 Ollama 模型；選擇 Ollama 會探索模型，連線測試或潤稿才會發出生成請求。
+- 逐字稿本機潤稿上限為 **500 個字元**，包含標點、空白及英文字符；超過會回報錯誤，不會自動截斷或分段。生成請求逾時為 **60 秒**，設定頁連線測試為 **20 秒**。
+- 每次請求指定模型閒置保留 **10 分鐘**，讓連續錄音減少重載；不會每次潤稿後立即釋放模型記憶體。SpeakSlow 結束時只停止自己啟動的 Ollama 程序。
+- 模型輸出仍需人工核對，尤其是姓名、數字、專有名詞及自我修正語句；成功回傳文字不等於內容正確。
 
-### 📊 數據與歷史
-- **可分享的數據儀表板**：總口述時間、字數、節省時間、平均速度
-- **完整歷史**：搜尋、統計、匯出、一鍵清空
-- **錄音永久保存**：辨識不滿意可**一鍵重新辨識**，甚至用 **Whisper** 換更強的模型重辨
+### 無法載入時怎麼判斷
 
-## 📊 作者本人天天在用（不是做好看的）
+| 畫面或現象 | 檢查方式 |
+| --- | --- |
+| 「找不到 Ollama 執行檔」 | 確認已安裝 Ollama，且位於上述路徑；或先啟動 Ollama App 再重新整理 |
+| 「此版本只支援在 macOS Apple Silicon 自動啟動 Ollama」 | 代表目前連不到服務；在該電腦先啟動 Ollama，再重新整理 |
+| 模型清單空白／「目前無法使用」 | 用 `ollama list` 核對完整模型名稱；下載所需文字生成模型後重新整理，並重新選取 |
+| Ollama 有模型，但 SpeakSlow 連不上 | 確認服務監聽 `127.0.0.1:11434`；可查詢 `http://127.0.0.1:11434/api/tags`，應回傳模型 JSON |
+| 「逐字稿超過 500 字的本機潤稿上限」 | 改以較短錄音使用本機潤稿，或關閉潤稿使用辨識結果 |
+| 逾時／「潤稿失敗，已使用原始文字」 | 先在設定頁測試模型，檢查記憶體與 Ollama 服務狀態；長文或較大模型可能超過時限 |
+| App 本身被 macOS 擋下 | 檢查安裝檔、簽章、公證與系統權限；這發生在 Ollama 功能載入之前 |
 
-<div align="center">
-<img src="assets/usage-dashboard.jpg" width="46%" alt="累計 36,707 字、省下 17 小時 22 分">
-<img src="assets/usage-history.jpg" width="46%" alt="單日口述一萬八千字的歷史紀錄">
+## 主要功能
 
-<em>口述 3 小時 = 省下 17 小時打字。有一天講了一萬八千字，可以出書了，書名就叫《我說的》。</em>
-</div>
+- **本機中文辨識**：sherpa-onnx Paraformer、繁體中文轉換、中英混用、熱詞與自訂字典。
+- **文字整理**：本機標點模型與規則處理；另可選用 AI 潤稿。
+- **鍵盤操作**：開始／停止錄音、`Esc` 取消、自訂快捷鍵，以及個別功能啟用開關。
+- **自動貼上**：依設定把最終文字貼到完成時的游標位置，可控制是否自動送出。
+- **歷史紀錄**：搜尋、統計、匯出、重新辨識，以及保留辨識原文的重新潤稿預覽。
+- **音訊／影片匯入**：手動轉錄，編輯結果後匯出 TXT 或 SRT。
 
-## 🔒 隱私：100% 本地，聲音不外流
+辨識和潤稿的速度取決於音訊、模型、硬體與是否需要冷啟動，不以固定秒數作保證。
 
-語音辨識在**你自己的電腦**跑，**聲音不上傳任何伺服器**。
-更進一步：AI 潤飾也能接**本機的 Ollama / LM Studio**（跑在你自己的顯卡上），整條「講話 → 辨識 → 潤稿」都在本地，什麼都不離開你電腦。
-你的歷史與錄音存在本機資料庫，跟程式碼分開，**不會被開源出去**。
+## 資料與隱私
 
-## ⚖️ 跟其他工具比
+- **語音辨識**在本機執行；模型首次下載需要連網。
+- **選用本機 Ollama 模型潤稿**時，SpeakSlow 將文字送至本機 loopback API，不會在潤稿失敗後自動切換到遠端 AI。此功能不支援 Ollama Cloud；程式自行啟動的 Ollama 服務會禁用 Cloud，既有外部服務的設定仍由使用者管理。
+- **選用 DeepSeek、OpenAI、Gemini 或自訂遠端服務**時，待處理文字會送到該服務，隱私與費用依供應商條款。因此「語音辨識在本機」不能等同「所有設定下文字都不上雲」。
+- 設定、歷史與保存的錄音位於使用者資料目錄，不隨 Git 原始碼分享；同仁需設定自己的模型與服務。分發時應使用建置產物。
 
-| | **聲聲慢** | 雲端語音服務 | 其他本地工具 |
-|---|:---:|:---:|:---:|
-| 速度 | **極快（約 0.3 秒）** | 中（要上傳） | 慢～中 |
-| 中文 / 台灣用字 | **專門優化** | 一般 | 一般 |
-| 隱私 | **100% 本地** | ⚠️ 聲音上雲 | 本地 |
-| 自動貼到游標處 | **✅** | 多半沒有 | 多半沒有 |
-| 價格 | **免費開源** | 多為付費 / 訂閱 | 不一定 |
+## 開發者：從原始碼執行
 
-## 🚀 開發者：從原始碼執行
-
-需 **Node.js 18+**、**Python 3.x**：
+使用 **Node.js 20 以上**（目前依賴要求）、**Python 3.11**（CI 建置版本）及 npm。`npm ci` 的 postinstall 會為 Electron 準備原生模組；若需編譯，須有平台的編譯工具。
 
 ```bash
-git clone https://github.com/Jeffrey0117/SpeakSlow.git
+git clone --branch codex/enable-local-ollama-transcript-polishing https://github.com/ilovetai1/SpeakSlow.git
 cd SpeakSlow
+npm ci
+```
 
-# Node 依賴
-npm install
-npx electron-builder install-app-deps
+macOS / Linux：
 
-# Python 環境 + sherpa-onnx
-python -m venv .venv
-.venv/Scripts/python.exe -m pip install sherpa-onnx numpy opencc
-
-# 下載模型（離線辨識 + 標點 + 串流 + VAD）
-.venv/Scripts/python.exe download_all_models.py
-
-# 啟動
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install sherpa-onnx numpy opencc edge-tts pyinstaller
+python download_all_models.py
 npm run dev
 ```
 
-> 模型檔較大（約 250MB～），已在 `.gitignore` 排除，需執行 `download_all_models.py` 下載。
+Windows PowerShell（需已安裝 Python 3.11）：
 
-## 🛠️ 技術棧
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install sherpa-onnx numpy opencc edge-tts pyinstaller
+python download_all_models.py
+npm run dev
+```
 
-- **前端**：React 19、Tailwind CSS、Vite ｜ **桌面端**：Electron（Windows / macOS / Linux）
-- **語音辨識（本地）**：[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)：Paraformer（離線）、Whisper（精準）、Silero VAD、ct-transformer（標點）、Zipformer（串流）
-- **資料庫**：better-sqlite3 ｜ **全域熱鍵**：uiohook-napi
+語音模型存放在專案的 `poc-sherpa` 目錄，模型大檔不在 Git 中。`download_all_models.py` 下載 Paraformer、Paraformer-small、INT8 標點、Zipformer 與 Silero VAD，**不會下載 Ollama 或 Qwen**。若要測試本機潤稿，仍需完成前述 Ollama 設定。
 
-## 🗺️ Roadmap
+### 建置安裝檔
 
-- [x] Windows / macOS / Linux 三平台安裝檔
-- [x] 可自訂觸發鍵、阿拉伯數字還原
-- [ ] 內建本地 LLM 一鍵設定
-- [ ] 用音量 / 音高判斷問號、驚嘆號（韻律標點）
+先在目標作業系統／架構準備依賴與語音模型，再依序執行：
+
+```bash
+npm run build:backend
+npm run build:renderer
+```
+
+然後選擇該平台的打包指令：
+
+| 平台 | 指令 |
+| --- | --- |
+| macOS Apple Silicon | `npx electron-builder --mac --arm64 --publish never` |
+| Windows | `npx electron-builder --win --publish never` |
+| Linux | `npx electron-builder --linux --publish never` |
+
+產物位於專案的 `dist` 目錄。正確建置的安裝檔包含 PyInstaller 語音後端、Paraformer／Paraformer-small、INT8 標點模型與 VAD；Ollama 程式與 LLM 模型仍需另外安裝。串流 Zipformer 與 Whisper 不在目前 `extraResources` 預載清單中。
+
+macOS 預設打包未配置 Developer ID 發佈簽章／公證；完成打包不代表可直接供所有同仁安裝。一般分支 push 也不會觸發現有 macOS／Linux 發佈工作流程，其觸發條件為手動執行或 `v*` tag。
+
+### 驗證
+
+```bash
+node --test --test-concurrency=1 test/*.test.js
+python -m unittest discover -s test -p 'test_sherpa_memory.py' -v
+npm run build:renderer
+```
+
+SQLite 測試在一般 Node 環境可能因 Electron ABI 跳過，需用相符的 Electron runtime 另行驗證。自動測試與 renderer 建置不能替代其他同仁電腦的首次安裝、權限、真實錄音及 Ollama 測試。
+
+## 技術棧
+
+- React 19、Tailwind CSS、Vite、Electron。
+- sherpa-onnx、Paraformer、Silero VAD、ct-transformer INT8；另支援 Whisper 與 Zipformer。
+- Ollama 原生本機 API，以及 OpenAI 相容服務 API。
+- better-sqlite3、uiohook-napi；Python 後端透過 PyInstaller 打包。
+
+## 後續工作
+
+- [x] 原生 Ollama 模型探索、選擇與 Apple Silicon 按需啟動。
+- [x] 可編輯的共用潤稿提示詞，以及歷史重新潤稿預覽。
+- [ ] Ollama 與模型的整合安裝引導／一鍵下載。
+- [ ] 本 fork 的安裝檔發佈、macOS Developer ID 簽章與公證。
+- [ ] 在其他同仁電腦及 Windows／Linux 完成首次安裝驗證。
 
 ## 🤝 貢獻
 
