@@ -8,15 +8,15 @@
 
 語音辨識使用 sherpa-onnx；文字潤稿可選本機 Ollama 或遠端 AI 服務。
 
-[本 fork](https://github.com/ilovetai1/SpeakSlow) · [Ollama 功能分支](https://github.com/ilovetai1/SpeakSlow/tree/codex/enable-local-ollama-transcript-polishing) · [上游專案](https://github.com/Jeffrey0117/SpeakSlow)
+[本 fork](https://github.com/ilovetai1/SpeakSlow) · [最新原始碼（main）](https://github.com/ilovetai1/SpeakSlow/tree/main) · [上游專案](https://github.com/Jeffrey0117/SpeakSlow)
 
 </div>
 
 ## 版本與取得方式
 
-這是 `ilovetai1/SpeakSlow` fork 的 **2.0.0 原始碼分支**，包含原生 Ollama 模型選擇、錄音後潤稿、自訂提示詞與歷史重新潤稿。
+這是 `ilovetai1/SpeakSlow` fork 的 **2.0.0 原始碼**；`main` 已包含原生 Ollama 模型選擇、錄音後潤稿、自訂提示詞與歷史重新潤稿。
 
-- **取得本次功能**：使用 `codex/enable-local-ollama-transcript-polishing` 分支，或由維護者提供明確從此分支建置的安裝檔。fork 的 `main` 不代表此功能分支。
+- **取得本次功能**：使用本 fork 的 `main` 分支，或由維護者提供明確從此版本建置的安裝檔。
 - **本 fork 安裝檔**：查看 [Releases](https://github.com/ilovetai1/SpeakSlow/releases)。截至 2026-09-07 尚未建立 Release；推送原始碼不會自動產生新版安裝檔。
 - **上游安裝檔**：位於 [Jeffrey0117/SpeakSlow Releases](https://github.com/Jeffrey0117/SpeakSlow/releases)，版本與此分支獨立，不能用來確認本次 Ollama 功能。
 
@@ -118,7 +118,7 @@ Ollama 視窗中目前聊天所選的模型，不會決定 SpeakSlow 使用哪�
 使用 **Node.js 20 以上**（目前依賴要求）、**Python 3.11**（CI 建置版本）及 npm。`npm ci` 的 postinstall 會為 Electron 準備原生模組；若需編譯，須有平台的編譯工具。
 
 ```bash
-git clone --branch codex/enable-local-ollama-transcript-polishing https://github.com/ilovetai1/SpeakSlow.git
+git clone --branch main https://github.com/ilovetai1/SpeakSlow.git
 cd SpeakSlow
 npm ci
 ```
