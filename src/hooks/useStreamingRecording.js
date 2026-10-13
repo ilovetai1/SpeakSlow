@@ -1,3 +1,4 @@
+import { beginLatency } from '../utils/latencyRecorder.mjs';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useModelStatus } from './useModelStatus';
 import { convertText, useTranslation } from '../i18n';
@@ -17,6 +18,7 @@ export const useStreamingRecording = () => {
   const [partialText, setPartialText] = useState('');
   const [fullText, setFullText] = useState('');
 
+  const metricRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const streamRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -98,6 +100,7 @@ export const useStreamingRecording = () => {
   // 開始串流錄音
   const startStreaming = useCallback(async () => {
     try {
+      metricRef.current = await beginLatency('streaming');
       setError(null);
       setPartialText('');
       setFullText('');
@@ -205,6 +208,7 @@ export const useStreamingRecording = () => {
       }
 
       streamingActiveRef.current = true;
+      if (metricRef.current) metricRef.current.record('capture', 'success', metricRef.current.clock() - metricRef.current.captureStart);
       setIsInitializing(false);
 
       // 定期發送音頻數據（平衡模式：每 250ms）
@@ -269,6 +273,7 @@ export const useStreamingRecording = () => {
       }, 250);  // 平衡模式：250ms 間隔
 
     } catch (err) {
+      metricRef.current?.finish('failed');
       setError(t('errors.cannotStartStreaming', { error: err.message }));
       setIsRecording(false);
       setIsInitializing(false);
@@ -280,6 +285,7 @@ export const useStreamingRecording = () => {
   const stopStreaming = useCallback(async () => {
     if (!streamingActiveRef.current) return;
 
+    metricRef.current?.stop();
     streamingActiveRef.current = false;
     setIsProcessing(true);
 
@@ -306,7 +312,7 @@ export const useStreamingRecording = () => {
 
       // 結束串流會話並獲取最終結果
       if (window.electronAPI) {
-        const endResult = await window.electronAPI.streamingEnd();
+        const endResult = metricRef.current ? await metricRef.current.measure('asr', () => window.electronAPI.streamingEnd()) : await window.electronAPI.streamingEnd();
 
         if (endResult.success && endResult.final_text) {
           let finalText = endResult.final_text;
@@ -340,10 +346,13 @@ export const useStreamingRecording = () => {
             file_size: 0,
           };
 
-          await window.electronAPI.saveTranscription(transcriptionData);
-        }
-      }
+          if (metricRef.current) await metricRef.current.measure('history_save', () => window.electronAPI.saveTranscription(transcriptionData));
+          else await window.electronAPI.saveTranscription(transcriptionData);
+          metricRef.current?.pipelineDone();
+        } else metricRef.current?.finish(endResult.success ? 'skipped' : 'failed');
+      } else metricRef.current?.finish('skipped');
     } catch (err) {
+      metricRef.current?.finish('failed');
       setError(t('errors.stopStreamingFailed', { error: err.message }));
     } finally {
       cleanup();
@@ -354,6 +363,7 @@ export const useStreamingRecording = () => {
 
   // 取消串流錄音
   const cancelStreaming = useCallback(() => {
+    metricRef.current?.finish('cancelled');
     streamingActiveRef.current = false;
     cleanup();
     setIsRecording(false);
@@ -366,6 +376,7 @@ export const useStreamingRecording = () => {
   // 組件卸載時清理
   useEffect(() => {
     return () => {
+      metricRef.current?.finish('cancelled');
       cleanup();
     };
   }, [cleanup]);

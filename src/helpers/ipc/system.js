@@ -215,12 +215,11 @@ module.exports = function register(ctx) {
 
   // 性能监控
   ipcMain.handle("get-performance-stats", () => {
-    // TODO: 实现性能统计功能
-    return { stats: {} };
+    return { stats: ctx.latencyManager.stats() };
   });
 
   ipcMain.handle("clear-performance-stats", () => {
-    // TODO: 实现清除性能统计功能
+    ctx.latencyManager.clear();
     return { success: true };
   });
 

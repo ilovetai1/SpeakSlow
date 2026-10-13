@@ -1,3 +1,4 @@
+import { currentLatency } from './utils/latencyRecorder.mjs';
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import "./index.css";
 import { toast } from "sonner";
@@ -379,6 +380,7 @@ export default function App() {
     if (aiOptimizationError) toast.error(aiOptimizationError.message);
   }, [aiOptimizationError]);
   const [latestIssue, setLatestIssue] = useState(null);
+  const [inputContextStatus, setInputContextStatus] = useState(null);
 
   // 錄音完成後動作設定
   const [pasteAfterTranscription, setPasteAfterTranscription] = useState(true);
@@ -717,6 +719,7 @@ export default function App() {
         showNotification('error', t('panel.commandError'));
       } finally {
         setCommandRunning(false);
+        currentLatency()?.outputDone();
       }
       return; // 操作模式不貼字
     }
@@ -726,13 +729,14 @@ export default function App() {
       enterEnabled: autoEnterAfterPaste,
       pasteSucceeded: false,
     });
-    if (!initialActions.paste) return;
+    if (!initialActions.paste) { currentLatency()?.outputDone(); return; }
 
     const now = Date.now();
     const lastPaste = lastPasteRef.current;
 
     // 防重复粘贴：如果是相同文本且在防抖时间内，则跳过
     if (lastPaste.text === text && (now - lastPaste.timestamp) < PASTE_DEBOUNCE_TIME) {
+      currentLatency()?.outputDone();
       return;
     }
 
@@ -743,7 +747,13 @@ export default function App() {
       if (window.electronAPI) {
         // 永遠自動貼上：交由主進程處理剪貼簿（保存原本 → 寫入辨識文字 → 貼上 → 還原原本）
         // 不在前端先寫剪貼簿，否則主進程會把「辨識文字」誤當成原本內容
-        await window.electronAPI.pasteText(text, { target: 'current' });
+        const metric = currentLatency();
+        const pasteStarted = metric?.clock();
+        try {
+          await window.electronAPI.pasteText(text, { target: 'current' });
+          metric?.record('paste_command', 'success', metric.clock() - pasteStarted);
+          if (metric?.stopped !== null && metric?.stopped !== undefined) metric.record('stop_to_paste_command_ack', 'success', metric.clock() - metric.stopped);
+        } catch (error) { metric?.record('paste_command', 'failed', metric.clock() - pasteStarted); throw error; }
 
         const completedActions = decideOutputActions({
           pasteEnabled: pasteAfterTranscription,
@@ -769,7 +779,7 @@ export default function App() {
       showNotification('error', t('notifications.pasteFailed'), {
         description: t('notifications.pasteFailedDesc')
       });
-    }
+    } finally { currentLatency()?.outputDone(); }
   }, [showNotification, t, pasteAfterTranscription, autoEnterAfterPaste]);
 
   // 处理录音完成（Sherpa 识别完成）
@@ -795,6 +805,7 @@ export default function App() {
   // 处理AI优化完成
   const handleAIOptimizationComplete = useCallback(async (optimizedResult) => {
     setLatestIssue((current) => nextPolishingIssue(current, optimizedResult));
+    setInputContextStatus({ context: optimizedResult.contextStatus || 'off', dictionary: optimizedResult.dictionaryContext || '', dictionaryStatus: optimizedResult.dictionaryStatus });
     if (optimizedResult.success && optimizedResult.enhanced_by_ai && optimizedResult.text) {
       // 显示AI优化后的文本
       setProcessedText(optimizedResult.text);
@@ -1615,7 +1626,8 @@ export default function App() {
             )}
           </p>
 
-          {latestIssue && (
+          {inputContextStatus && <p className="text-xs text-gray-500">詞庫情境：{inputContextStatus.dictionary || '全域'}；文字情境：{({ available: '已使用', omitted_budget: '預算未驗證，未使用', off: '關閉', permission_denied: '缺少輔助使用權限', unsupported: '此欄位不支援', timeout: '讀取逾時', expired: '情境已過期', focus_changed: '欄位已變更', secure_field: '安全欄位不讀取', denied_app: '此 App 已排除' })[inputContextStatus.context] || '本次無法讀取'}</p>}
+            {latestIssue && (
             <p className="mt-2 text-xs text-amber-700 dark:text-amber-300" role="status">
               {latestIssue}
             </p>

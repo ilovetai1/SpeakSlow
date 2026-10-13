@@ -1,6 +1,6 @@
-# SpeakSlow 2.1.0 開發規劃
+# SpeakSlow 2.1.0 開發版與驗收狀態
 
-本次先提交既有內容，再進入 **2.1.0 開發版**。新功能只有規劃，尚未實作、打包、安裝或發佈。
+本次先提交既有內容，再進入 **2.1.0 開發版**。新功能已實作並完成隔離自動測試與 ARM64 開發包。已在本機安裝 Apple Development 簽章的 2.1.0；Chromium 及完整錄音驗收未完成，未正式發佈。詳見 `docs/EVOLUTION_2_1_0_VALIDATION.md`。
 
 | 範圍 | 使用者看得到的功能 | 預設與界線 |
 |---|---|---|
@@ -17,7 +17,7 @@ App 詞庫以本次辨識後套用字典時取得的 App 情境為準，画面�
 3. **改錯學習**：共用 reader，先確認本次插入範圍，再產生候選及 App 範圍規則；驗證核准／忽略／撤回。
 4. **2.1.0 整合驗收**：做功能開關 off/on 回歸、至少 32 組語料及 30 組有效實機 paired trials，记录結果與不支援 App。
 
-各階段通過自身驗收才進下一階段。helper protocol 的 mock 通過不代表 App 真正支援；模型 request 成功不代表語意正確。未量測的性能結果標為未量測。
+可先完成不依賴平台結果的實作與隔離測試；正式版本須通過各階段驗收。helper protocol 的 mock 通過不代表 App 真正支援；模型 request 成功不代表語意正確。未量測的性能結果標為未量測。
 
 ## 保留的行為
 
@@ -30,9 +30,9 @@ App 詞庫以本次辨識後套用字典時取得的 App 情境為準，画面�
 
 - 既有內容提交：`713bc96`，36 檔案；含同 tick 模型探索取消競態修正。
 - 已驗證：Node suite **83 passed / 1 Electron-ABI skip**；renderer build 通過。這是基準版本檢查，不是 2.1.0 新功能驗收。
-- `package.json` 與 `package-lock.json` 已從 2.0.0 進版至 **2.1.0**；README 明示開發規劃。
-- 新功能實作任務保持未勾選。此 change 不建立 tag、不 push、不建立 Release、不改真實使用者 SQLite。
-- 實作與驗收完成後，再依當次授權處理 commit／merge／打包／安裝或發佈。
+- `package.json` 與 `package-lock.json` 已從 2.0.0 進版至 **2.1.0**；README 明示開發版及待驗收界線。
+- 實作與自動驗證任務依目前證據勾選；實機驗收任務保持未完成。使用者已授權安裝、commit 與 push 至 `ilovetai1/SpeakSlow` 的 main。此 change 不建立 tag／Release、不改真實使用者 SQLite。
+- 本次交付保留未完成的驗收任務，不將 commit／push 當作驗收完成。
 
 ## 設計及驗收文件
 
@@ -41,4 +41,4 @@ App 詞庫以本次辨識後套用字典時取得的 App 情境為準，画面�
 - `specs/`：可驗收的產品契約。
 - `tasks.md`：依依賴順序執行的實作清單。
 
-新 native reader 先驗收 macOS Apple Silicon。TextEdit 與 Chromium 欄位列為首批可控驗收目標，實際支援狀態待測。其他平台保留原功能，不能把介面存在視為平台已驗收。
+新 native reader 先驗收 macOS Apple Silicon。TextEdit 與 Chromium 欄位列為首批可控驗收目標，TextEdit bounded AX 與改錯驗證通過；Chromium 由使用者暫緩。其他平台保留原功能，不能把介面存在視為平台已驗收。

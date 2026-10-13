@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import LearningReview from './LearningReview';
 import { Search, Plus, Trash2, Edit2, Check, X, ToggleLeft, ToggleRight, Download, Upload } from "lucide-react";
 
 /**
@@ -152,6 +153,7 @@ const DictionaryManager = ({ t }) => {
     try {
       const result = await window.electronAPI.exportDictionary();
       if (result.success) {
+        if (result.excludedScoped) alert(`CSV 不包含 ${result.excludedScoped} 個 App 規則；請使用 JSON 保存其範圍。`);
         alert(t?.("settings.dictionary.exportSuccess", { count: result.count }) || `成功匯出 ${result.count} 個項目`);
       } else if (!result.canceled) {
         alert(t?.("settings.dictionary.exportFailed", { error: result.error }) || "匯出失敗: " + result.error);
@@ -195,6 +197,8 @@ const DictionaryManager = ({ t }) => {
           {t?.("settings.dictionary.description") || "設定詞彙替換規則，自動校正語音辨識結果中的專有名詞（人名、地名、術語等）"}
         </p>
       </div>
+
+      <LearningReview onChanged={loadEntries} />
 
       {/* 搜尋與新增 */}
       <div className="flex flex-wrap gap-3 mb-4">
@@ -294,6 +298,7 @@ const DictionaryManager = ({ t }) => {
               </label>
               <input
                 type="text"
+                disabled={typeof editingEntry?.id === 'string' && editingEntry.id.startsWith('app:')}
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 placeholder={t?.("settings.dictionary.categoryPlaceholder") || "例：人名"}

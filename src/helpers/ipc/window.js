@@ -12,7 +12,16 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("paste-text", async (event, text, options = {}) => {
-    return ctx.clipboardManager.pasteText(text, options);
+    const learning = ctx.learningManager && ctx.databaseManager.getSetting('local_correction_learning_enabled', false) === true;
+    if (learning) {
+      try { const prepared = await ctx.learningManager.prepare(text); ctx.learningManager.lastStatus = prepared.status; }
+      catch { ctx.learningManager.stop(); ctx.learningManager.lastStatus = 'observation_failed'; }
+    }
+    try {
+      const result = await ctx.clipboardManager.pasteText(text, options);
+      if (learning) ctx.learningManager.inserted().then(value => { ctx.learningManager.lastStatus = value.status; }).catch(() => { ctx.learningManager.stop(); ctx.learningManager.lastStatus = 'protocol_error'; });
+      return result;
+    } catch (error) { if (learning) ctx.learningManager.stop(); throw error; }
   });
 
   // 發送 Enter 鍵（完全信任模式）

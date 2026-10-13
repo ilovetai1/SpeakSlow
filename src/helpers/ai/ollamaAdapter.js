@@ -8,7 +8,7 @@ class OllamaAdapter {
     this.runtime = runtime;
   }
 
-  async process({ model, messages, supportsThinking, timeoutMs = 60000, signal }) {
+  async process({ model, messages, supportsThinking, timeoutMs = 60000, signal, maxOutputTokens }) {
     if (!model) {
       return { success: false, error: "尚未選擇 Ollama 模型", code: "model_missing" };
     }
@@ -41,6 +41,7 @@ class OllamaAdapter {
         },
       };
       if (thinking) payload.think = false;
+      if (maxOutputTokens === 512) payload.options.num_predict = 512;
       this.runtime?.trackModel?.(selectedModel);
 
       const response = await this.fetchImpl(OLLAMA_CHAT_ENDPOINT, {
@@ -64,6 +65,9 @@ class OllamaAdapter {
 
       const data = await response.json();
       requestSignal.throwIfAborted();
+      if (maxOutputTokens === 512 && data.done_reason === 'length') {
+        return { success: false, error: '本機情境潤稿超過輸出預算', code: 'output_over_limit' };
+      }
       const content = data.message?.content;
       if (typeof content !== "string" || !content.trim()) {
         return { success: false, error: "Ollama 未回傳可用文字", code: "invalid_response" };

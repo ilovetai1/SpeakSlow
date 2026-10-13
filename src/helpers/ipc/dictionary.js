@@ -3,7 +3,7 @@ const { ipcMain } = require("electron");
 module.exports = function register(ctx) {
   // ===== 字典功能 =====
   ipcMain.handle("get-dictionary-entries", (event, limit, offset) => {
-    return ctx.databaseManager.getDictionaryEntries(limit, offset);
+    return [...ctx.databaseManager.getDictionaryEntries(limit, offset), ...(ctx.learningManager?.rules() || []).map(r => ({ ...r, category: `App：${r.scope.bundleId}` }))];
   });
 
   ipcMain.handle("add-dictionary-entry", (event, original, replacement, category) => {
@@ -11,19 +11,26 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("update-dictionary-entry", (event, id, data) => {
+    if (typeof id === 'string' && id.startsWith('app:')) return ctx.learningManager.updateRule(id, data);
     return ctx.databaseManager.updateDictionaryEntry(id, data);
   });
 
   ipcMain.handle("delete-dictionary-entry", (event, id) => {
-    return ctx.databaseManager.deleteDictionaryEntry(id);
+    if (typeof id === 'string' && id.startsWith('app:')) return ctx.learningManager.updateRule(id, { delete: true });
+    if (!ctx.learningManager) return ctx.databaseManager.deleteDictionaryEntry(id);
+    return ctx.learningManager.transaction(() => {
+      const result = ctx.databaseManager.deleteDictionaryEntry(id);
+      ctx.databaseManager.setSetting('correction_undo_v1', { version: 1, records: ctx.learningManager.undoStore().filter(x => !(x.source === 'global' && x.approved.id === id)) });
+      return result;
+    });
   });
 
   ipcMain.handle("search-dictionary", (event, query) => {
-    return ctx.databaseManager.searchDictionary(query);
+    return [...ctx.databaseManager.searchDictionary(query), ...(ctx.learningManager?.rules() || []).filter(r => [r.original, r.replacement, r.scope.bundleId].some(s => s.includes(query))).map(r => ({ ...r, category: `App：${r.scope.bundleId}` }))];
   });
 
   ipcMain.handle("get-dictionary-categories", () => {
-    return ctx.databaseManager.getDictionaryCategories();
+    return [...new Set([...ctx.databaseManager.getDictionaryCategories(), ...(ctx.learningManager?.rules() || []).map(r => `App：${r.scope.bundleId}`)])];
   });
 
   ipcMain.handle("apply-dictionary", (event, text) => {
@@ -31,6 +38,7 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("toggle-dictionary-entry", (event, id) => {
+    if (typeof id === 'string' && id.startsWith('app:')) { const r = ctx.learningManager.rules().find(x => x.id === id); if (!r) throw new Error('rule_unavailable'); return ctx.learningManager.updateRule(id, { enabled: !r.enabled }); }
     const entry = ctx.databaseManager.db.prepare("SELECT enabled FROM dictionary WHERE id = ?").get(id);
     if (entry) {
       return ctx.databaseManager.updateDictionaryEntry(id, { enabled: !entry.enabled });
@@ -68,10 +76,10 @@ module.exports = function register(ctx) {
         fs.writeFileSync(filePath, csvHeader + csvRows, "utf-8");
       } else {
         // JSON 格式
-        fs.writeFileSync(filePath, JSON.stringify(entries, null, 2), "utf-8");
+        fs.writeFileSync(filePath, JSON.stringify({ version: 1, global: entries, scoped: ctx.learningManager?.rules() || [] }, null, 2), "utf-8");
       }
 
-      return { success: true, count: entries.length, path: filePath };
+      return { success: true, count: entries.length, path: filePath, excludedScoped: filePath.endsWith('.csv') ? ctx.learningManager?.rules().length || 0 : 0 };
     } catch (error) {
       ctx.logger.error("匯出字典失敗:", error);
       return { success: false, error: error.message };
@@ -119,7 +127,25 @@ module.exports = function register(ctx) {
         }
       } else {
         // 解析 JSON
-        entries = JSON.parse(content);
+        const parsed = JSON.parse(content);
+        if (parsed && !Array.isArray(parsed) && parsed.version === 1 && Array.isArray(parsed.global) && Array.isArray(parsed.scoped)) {
+          // Validate every scoped rule before any write; imports never downgrade scope.
+          const { term, bundle } = require('../correctionLearningManager');
+          if (parsed.global.some(r => r.scope !== undefined || r.id?.toString().startsWith('app:'))) throw new Error('scope_invalid');
+          if (parsed.scoped.some(r => !term(r.original) || !term(r.replacement) || r.scope?.kind !== 'app' || !bundle(r.scope.bundleId) || typeof r.enabled !== 'boolean')) throw new Error('scope_invalid');
+          const result = ctx.databaseManager.db.transaction(() => {
+            const global = ctx.databaseManager.importDictionary(parsed.global, mode || 'merge');
+            const current = ctx.learningManager.rules();
+            for (const rule of parsed.scoped) {
+              if (current.some(r => r.original.toLowerCase() === rule.original.toLowerCase() && r.scope.bundleId === rule.scope.bundleId)) throw new Error('rule_conflict');
+              current.push({ id: `app:${require('node:crypto').randomUUID()}`, original: rule.original, replacement: rule.replacement, scope: rule.scope, enabled: rule.enabled, revision: 1, source: 'import' });
+            }
+            ctx.learningManager.saveRules(current); return global;
+          })();
+          return { success: true, ...result, path: filePath };
+        }
+        if (!Array.isArray(parsed) || parsed.some(r => r.scope !== undefined || r.id?.toString().startsWith('app:'))) throw new Error('scope_invalid');
+        entries = parsed;
         if (!Array.isArray(entries)) {
           entries = [entries];
         }
@@ -135,6 +161,11 @@ module.exports = function register(ctx) {
 
   // 清空字典
   ipcMain.handle("clear-dictionary", () => {
-    return ctx.databaseManager.clearDictionary();
+    if (!ctx.learningManager) return ctx.databaseManager.clearDictionary();
+    return ctx.learningManager.transaction(() => {
+      const result = ctx.databaseManager.clearDictionary(); ctx.learningManager.saveRules([]);
+      ctx.databaseManager.setSetting('correction_undo_v1', { version: 1, records: [] });
+      return result;
+    });
   });
 };

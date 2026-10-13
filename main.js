@@ -7,6 +7,8 @@ require("dotenv").config();
 
 const { app, globalShortcut, BrowserWindow, ipcMain, Menu } = require("electron");
 const path = require("path");
+const acceptance = require('./src/helpers/acceptanceMode').acceptanceConfig();
+if (acceptance) app.setPath('userData', acceptance.dataDirectory);
 const { spawn } = require("child_process");
 
 // 导入日志管理器
@@ -138,7 +140,7 @@ logger.info(
 // 用户数据目录环境变量将在 app ready 后设置
 
 // 初始化管理器
-const environmentManager = new EnvironmentManager();
+const environmentManager = new EnvironmentManager({ dataDirectory: acceptance?.dataDirectory });
 const databaseManager = new DatabaseManager();
 const clipboardManager = new ClipboardManager(logger); // 传递logger实例
 const sherpaManager = new SherpaManager(logger); // 传递logger实例
@@ -148,6 +150,10 @@ const typelessManager = new TypelessManager(logger);
 // 初始化数据库
 const dataDirectory = environmentManager.ensureDataDirectory();
 databaseManager.initialize(dataDirectory);
+if (acceptance) {
+  // Settings only in the explicit isolated directory; normal startup is unchanged.
+  for (const [key, value] of Object.entries({ enable_ai_optimization: false, context_aware_polishing_enabled: false, local_correction_learning_enabled: false, paste_after_transcription: true, auto_enter_after_paste: false, save_audio: false, enable_streaming_mode: false, typeless_enabled: true })) databaseManager.setSetting(key, value);
+}
 
 // 崩潰救援：若上次錄音中途被砍，把遺留的音訊救回歷史（標「未轉錄」）
 try {
@@ -289,7 +295,9 @@ if (!gotTheLock) {
     logger.info('设置用户数据目录环境变量', {
       ELECTRON_USER_DATA: process.env.ELECTRON_USER_DATA
     });
-    startApp();
+    startApp().then(() => {
+      if (acceptance?.planPath) return require('./src/helpers/acceptanceRunner').runAcceptance({ app, acceptance, windowManager, databaseManager, sherpaManager, hotkeyManager, clipboardManager, ipcHandlers });
+    }).catch(error => logger.error('啟動或驗收失敗', { code: error.code || 'acceptance_failed' }));
   });
 }
 

@@ -120,8 +120,9 @@ class AITextProcessor {
     ];
   }
 
-  async processTextWithAI(text, mode = "optimize", customPrompt = null, { requireEnabled = false } = {}) {
+  async processTextWithAI(text, mode = "optimize", customPrompt = null, { requireEnabled = false, workflow, scopeHandle, metricId, profile: selectedProfile } = {}) {
     const startedAt = Date.now();
+    let usedExternalContext = false;
     const controller = new AbortController();
     this.requests.add(controller);
     try {
@@ -145,12 +146,54 @@ class AITextProcessor {
       const adapter = config.provider === "ollama"
         ? this.adapters.ollama
         : this.adapters.openAICompatible;
+      const { PROFILES, appendData, withinBudget } = require('./polishingContext');
+      const savedProfile = await this.databaseManager.getSetting('writing_profile', 'neutral');
+      const wordScope = this.wordScopes?.get(scopeHandle);
+      const mappings = await this.databaseManager.getSetting('writing_profile_apps', {});
+      const requestedProfile = selectedProfile || (savedProfile === 'auto' ? mappings?.[wordScope?.bundleId] : savedProfile);
+      const profile = isTranscriptPolishing && Object.hasOwn(PROFILES, requestedProfile) ? requestedProfile : 'neutral';
+      let messages = appendData(this._messages(text, mode, customPrompt, polishingPrompt), profile, null);
+      let contextStatus = 'off';
+      if (isTranscriptPolishing && mode === 'optimize' && workflow === 'automatic_offline' && config.provider === 'ollama' && this.contextManager
+          && await this.databaseManager.getSetting('context_aware_polishing_enabled', false) === true
+          && await this.databaseManager.getSetting('enable_ai_optimization', false) === true) {
+        const started = require('node:perf_hooks').performance.now();
+        const snapshot = await this.contextManager.capture();
+        contextStatus = snapshot.status;
+        if (snapshot.handle) {
+          const data = await this.contextManager.consume(snapshot.handle); contextStatus = data.status;
+          if (data.status === 'available') {
+            let contextual = appendData(this._messages(text, mode, customPrompt, polishingPrompt), profile, data.text);
+            const calibration = await this.databaseManager.getSetting('context_budget_v1', null);
+            let current = null;
+            if (calibration) {
+              try { current = await this.ollamaRuntime.fetchJson('/api/tags', { signal: controller.signal }); }
+              catch { controller.signal.throwIfAborted(); }
+            }
+            const digest = current?.models?.find(m => m.name === config.model || m.model === config.model)?.digest;
+            if (calibration?.digest && calibration.digest === digest) {
+              const bounded = { ...data.text };
+              for (const field of ['after', 'before', 'selected']) {
+                while (bounded[field] && !withinBudget(contextual, calibration, config.model, polishingPrompt)) {
+                  bounded[field] = [...bounded[field]].slice(0, -1).join('');
+                  contextual = appendData(this._messages(text, mode, customPrompt, polishingPrompt), profile, bounded);
+                }
+              }
+              if (Object.values(bounded).some(Boolean) && withinBudget(contextual, calibration, config.model, polishingPrompt)) { messages = contextual; usedExternalContext = true; }
+              else contextStatus = 'omitted_budget';
+            } else contextStatus = 'omitted_budget';
+          }
+        }
+        this.latencyManager?.record(metricId, 'context', contextStatus === 'available' ? 'success' : 'skipped', contextStatus === 'available' ? require('node:perf_hooks').performance.now() - started : null);
+      }
+      this.latencyManager?.classify(metricId, config.provider === 'ollama' ? 'ollama' : 'openai_compatible');
       controller.signal.throwIfAborted();
       const result = await adapter.process({
         ...config,
-        messages: this._messages(text, mode, customPrompt, polishingPrompt),
+        messages,
         timeoutMs: 60000,
         signal: controller.signal,
+        ...(usedExternalContext ? { maxOutputTokens: 512 } : {}),
       });
 
       if (this.stopping) {
@@ -169,7 +212,7 @@ class AITextProcessor {
       if (!finalText) {
         return { success: false, error: "AI 未回傳可用文字", code: "invalid_response" };
       }
-      return { ...result, text: finalText };
+      return { ...result, text: finalText, contextStatus, writingProfile: profile };
     } catch (error) {
       if (this.stopping) {
         return {
@@ -195,7 +238,7 @@ class AITextProcessor {
           ? "AI 請求逾時"
           : connection
             ? "無法連線到 AI 服務"
-            : error.message || "文字處理失敗",
+            : usedExternalContext ? '本機情境潤稿失敗' : error.message || "文字處理失敗",
         code,
       };
     } finally {
@@ -253,6 +296,36 @@ class AITextProcessor {
         code: error.code || "model_discovery_failed",
       };
     }
+  }
+
+  async calibrateContextBudget() {
+    const controller = new AbortController(); this.requests.add(controller);
+    try {
+      const config = await this._loadConfig();
+      if (config.provider !== 'ollama') return { success: false, error: '請先選擇本機 Ollama。' };
+      const info = await this.ollamaRuntime.fetchJson('/api/show', { method: 'POST', body: { model: config.model, verbose: true }, signal: controller.signal });
+      const modelInfo = info.model_info || {};
+      const tokens = new Set(modelInfo['tokenizer.ggml.tokens'] || []);
+      const bytes = [...Array(256).keys()];
+      const visible = bytes.filter(b => (b >= 33 && b <= 126) || (b >= 161 && b <= 172) || b >= 174);
+      let extra = 256;
+      const alphabet = bytes.map(b => visible.includes(b) ? String.fromCodePoint(b) : String.fromCodePoint(extra++));
+      if (modelInfo['tokenizer.ggml.model'] !== 'gpt2' || !alphabet.every(c => tokens.has(c))) return { success: false, error: '此模型的文字預算尚無法可靠驗證。' };
+      const prompt = await this.getTranscriptPolishingPrompt();
+      const messages = [{ role: 'system', content: '' }, { role: 'user', content: '' }, { role: 'user', content: '' }];
+      const result = await this.ollamaRuntime.fetchJson('/api/chat', { method: 'POST', body: { model: config.model, messages, stream: false, think: false, keep_alive: '10m', options: { num_ctx: 2048, num_predict: 8, temperature: 0 } }, timeoutMs: 60000, signal: controller.signal });
+      if (!Number.isFinite(result.prompt_eval_count)) return { success: false, error: '模型未回報預算觀測值。' };
+      const tags = await this.ollamaRuntime.fetchJson('/api/tags', { signal: controller.signal });
+      const digest = tags.models?.find(m => m.name === config.model || m.model === config.model)?.digest;
+      if (!digest) return { success: false, error: '無法確認模型版本。' };
+      const { hash } = require('./polishingContext');
+      const framingAllowance = Math.max(32, Math.ceil(result.prompt_eval_count) + 32);
+      const calibration = { version: 1, model: config.model, digest, instructionHash: hash(prompt), byteFallbackVerified: true, framingAllowance, measuredPromptTokens: result.prompt_eval_count };
+      controller.signal.throwIfAborted();
+      await this.databaseManager.setSetting('context_budget_v1', calibration);
+      return { success: true, measuredPromptTokens: result.prompt_eval_count };
+    } catch { return { success: false, error: '本機文字預算驗證失敗。' }; }
+    finally { this.requests.delete(controller); }
   }
 
   shutdown() {

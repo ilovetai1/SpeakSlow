@@ -3,7 +3,8 @@ const fs = require("fs");
 const os = require("os");
 
 class EnvironmentManager {
-  constructor() {
+  constructor({ dataDirectory } = {}) {
+    this.dataDirectory = dataDirectory;
     this.loadEnvironmentVariables();
   }
 
@@ -99,6 +100,7 @@ class EnvironmentManager {
   }
 
   getDataDirectory() {
+    if (this.dataDirectory) return this.dataDirectory;
     const appName = "聲聲慢";
     
     switch (process.platform) {

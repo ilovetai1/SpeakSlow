@@ -47,10 +47,17 @@ module.exports = function register(ctx) {
   });
 
   const saveSetting = async (event, key, value) => {
-    if (key === 'enable_ai_optimization' && typeof value !== 'boolean') {
+    if (['enable_ai_optimization', 'context_aware_polishing_enabled', 'local_correction_learning_enabled', 'latency_metrics_enabled'].includes(key) && typeof value !== 'boolean') {
       throw new Error('AI 潤稿開關必須是布林值');
     }
+    if (key === 'writing_profile' && !['neutral', 'message', 'email', 'note', 'auto'].includes(value)) throw new Error('writing_profile_invalid');
+    if (key === 'writing_profile_apps' && (!value || typeof value !== 'object' || Array.isArray(value) || Object.entries(value).some(([id, profile]) => !require('../correctionLearningManager').bundle(id) || !['neutral', 'message', 'email', 'note'].includes(profile)))) throw new Error('writing_profile_invalid');
+    if (key === 'context_app_denylist' && (!Array.isArray(value) || value.length > 100 || value.some(id => !require('../correctionLearningManager').bundle(id)))) throw new Error('scope_invalid');
     const result = await ctx.databaseManager.setSetting(key, value);
+    if (key === 'latency_metrics_enabled') ctx.latencyManager?.configure(value);
+    if ((key === 'context_aware_polishing_enabled' || key === 'enable_ai_optimization') && value === false) ctx.contextManager?.reset();
+    if (key === 'local_correction_learning_enabled' && value === false) ctx.learningManager?.stop('off');
+    if (['context_aware_polishing_enabled', 'local_correction_learning_enabled'].includes(key) && value === true) ctx.contextManager?.warm();
     // 先取消工作，再廣播持久化結果；卸載失敗也保持「關」，並讓呼叫者顯示錯誤。
     const release = key === 'enable_ai_optimization' && value === false
       ? ctx.aiProcessor.disableOptimization()

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { convertText, useTranslation } from '../i18n';
+import { beginLatency } from '../utils/latencyRecorder.mjs';
 import { createSingleFlightGate, finalizeTranscript } from '../utils/transcriptFinalization.mjs';
 
 /**
@@ -26,6 +27,8 @@ export const useRecording = (modelStatus) => {
 
   // 添加防重复处理机制
   const processingRef = useRef({ isProcessingAudio: false, lastProcessTime: 0 });
+  const metricRef = useRef(null);
+  const evolutionRef = useRef({});
   const pipelineGateRef = useRef(null);
   if (!pipelineGateRef.current) pipelineGateRef.current = createSingleFlightGate();
 
@@ -119,6 +122,7 @@ export const useRecording = (modelStatus) => {
       return false;
     }
     try {
+      metricRef.current = await beginLatency(await window.electronAPI?.getCommandMode?.() === true ? 'command' : 'offline');
       setError(null);
 
       // 检查 Sherpa 是否就绪
@@ -275,7 +279,9 @@ export const useRecording = (modelStatus) => {
         }
       }, 1000);
 
+      if (metricRef.current) metricRef.current.record('capture', 'success', metricRef.current.clock() - metricRef.current.captureStart);
     } catch (err) {
+      metricRef.current?.finish('failed');
       setError(t('errors.cannotStartRecording', { error: err.message }));
       setIsRecording(false);
       cleanup();
@@ -289,6 +295,7 @@ export const useRecording = (modelStatus) => {
   const stopRecording = useCallback(async () => {
     if (!isRecording) return;
 
+    metricRef.current?.stop();
     setIsRecording(false);
     setIsProcessing(true);
 
@@ -351,6 +358,7 @@ export const useRecording = (modelStatus) => {
         save_audio: saveAudio !== false,
       });
     } catch (err) {
+      metricRef.current?.finish('failed');
       setError(t('errors.audioProcessingFailed', { error: err.message }));
       cleanup();
     } finally {
@@ -368,7 +376,8 @@ export const useRecording = (modelStatus) => {
         const arrayBuffer = await wavBlob.arrayBuffer();
         const uint8Array = new Uint8Array(arrayBuffer);
 
-        const transcriptionResult = await window.electronAPI.transcribeAudio(uint8Array, transcribeOptions);
+        const invokeASR = () => window.electronAPI.transcribeAudio(uint8Array, transcribeOptions);
+        const transcriptionResult = metricRef.current ? await metricRef.current.measure('asr', invokeASR) : await invokeASR();
 
         if (transcriptionResult.success) {
           let raw_text = transcriptionResult.text;
@@ -377,6 +386,7 @@ export const useRecording = (modelStatus) => {
           if (!raw_text || !raw_text.trim()) {
             console.log('未偵測到語音，跳過貼上與儲存');
             processingRef.current.isProcessingAudio = false;
+            metricRef.current?.finish('skipped');
             return;
           }
 
@@ -390,7 +400,9 @@ export const useRecording = (modelStatus) => {
 
           // 套用字典替換（校正專有名詞）
           try {
-            const dictResult = await window.electronAPI.applyDictionary(raw_text);
+            const scoped = window.electronAPI.applyDictionaryWithContext ? await window.electronAPI.applyDictionaryWithContext(raw_text) : { text: await window.electronAPI.applyDictionary(raw_text) };
+            evolutionRef.current = { scopeHandle: scoped.scopeHandle, dictionaryContext: scoped.bundleId, dictionaryStatus: scoped.status };
+            const dictResult = scoped.text;
             if (dictResult && dictResult !== raw_text) {
               raw_text = dictResult;
             }
@@ -424,17 +436,19 @@ export const useRecording = (modelStatus) => {
             commandMode,
             transcriptionData,
             processText: async (text, mode) => {
-              const result = await window.electronAPI.processText(text, mode);
+              const invokePolish = () => window.electronAPI.processText(text, mode, { workflow: 'automatic_offline', scopeHandle: evolutionRef.current.scopeHandle, metricId: metricRef.current?.id });
+              const result = metricRef.current ? await metricRef.current.measure('polish', invokePolish) : await invokePolish();
+              evolutionRef.current.contextStatus = result?.contextStatus || 'off';
               if (result?.success && shouldConvert && targetLang === 'zh-TW') {
                 return { ...result, text: convertText(result.text, 'zh-TW') };
               }
               return result;
             },
-            saveTranscription: (data) => window.electronAPI.saveTranscription(data),
+            saveTranscription: (data) => metricRef.current ? metricRef.current.measure('history_save', () => window.electronAPI.saveTranscription(data)) : window.electronAPI.saveTranscription(data),
           });
           setIsOptimizing(false);
 
-          if (finalized.cancelled) return { ...transcriptionResult, cancelled: true };
+          if (finalized.cancelled) { metricRef.current?.finish('cancelled'); return { ...transcriptionResult, cancelled: true }; }
 
           if (window.onAIOptimizationComplete) {
             await window.onAIOptimizationComplete({
@@ -443,9 +457,13 @@ export const useRecording = (modelStatus) => {
               text: finalized.finalText,
               enhanced_by_ai: finalized.polished,
               issue: finalized.issue,
+              contextStatus: evolutionRef.current.contextStatus,
+              dictionaryContext: evolutionRef.current.dictionaryContext,
+              dictionaryStatus: evolutionRef.current.dictionaryStatus,
             });
           }
 
+          if (!window.onAIOptimizationComplete) metricRef.current?.outputDone();
           return { ...transcriptionResult, enhanced_by_ai: false };
         } else {
           throw new Error(transcriptionResult.error || t('errors.transcriptionFailed'));
@@ -457,9 +475,11 @@ export const useRecording = (modelStatus) => {
         return mockResult;
       }
     } catch (err) {
+      metricRef.current?.finish('failed');
       throw new Error(t('errors.audioProcessingFailed', { error: err.message }));
     } finally {
       processingRef.current.isProcessingAudio = false;
+      metricRef.current?.pipelineDone();
       setIsOptimizing(false);
     }
   }, [t]);
@@ -526,6 +546,7 @@ export const useRecording = (modelStatus) => {
 
   // 取消录音
   const cancelRecording = useCallback(() => {
+    metricRef.current?.finish('cancelled');
     stopPrecogTimer();
     if (precogRef.current.active) {
       precogRef.current.active = false;

@@ -221,6 +221,26 @@ class OllamaRuntime {
     this.usedModels.add(model);
   }
 
+  async fetchJson(endpoint, { method = 'GET', body, signal, timeoutMs = 5000 } = {}) {
+    if (!['/api/tags', '/api/show', '/api/chat'].includes(endpoint)) throw new Error('unsupported_endpoint');
+    const control = this.createRequestSignal(timeoutMs, signal);
+    try {
+      await this.releasing;
+      control.signal.throwIfAborted();
+      await this.ensureServer({ signal: control.signal });
+      control.signal.throwIfAborted();
+      if (endpoint === '/api/chat') this.trackModel(body.model);
+      const response = await this.fetchImpl(`${OLLAMA_ORIGIN}${endpoint}`, {
+        method, signal: control.signal,
+        ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+      });
+      if (!response.ok) throw new Error('local_metadata_failed');
+      const value = await response.json();
+      control.signal.throwIfAborted();
+      return value;
+    } finally { control.release(); }
+  }
+
   releaseResources() {
     if (this.releasing) return this.releasing;
     const finished = [...this.requestControllers.values()];

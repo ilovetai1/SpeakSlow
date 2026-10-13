@@ -10,11 +10,13 @@ import HotkeySettings from "./components/HotkeySettings";
 import HotwordsManager from "./components/HotwordsManager";
 import DictionaryManager from "./components/DictionaryManager";
 import EmojiManager from "./components/EmojiManager";
+import EvolutionSettings from './components/EvolutionSettings';
 import HistoryView from "./components/HistoryView";
 import { useTranslation, LanguageProvider } from "./i18n";
 
 // 設定面板左側分頁（依重要性排序）
 const SETTINGS_TABS = [
+  { id: 'evolution', label: '寫作、學習與延遲', icon: Sparkles },
   { id: 'general', labelKey: 'settings.tabs.general', icon: Settings },
   { id: 'history', labelKey: 'settings.tabs.history', icon: History },
   { id: 'ai', labelKey: 'settings.tabs.ai', icon: Sparkles },
@@ -671,7 +673,7 @@ const SettingsPage = () => {
                 }`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
-                {t(tab.labelKey)}
+                {tab.label || t(tab.labelKey)}
               </button>
             );
           })}
@@ -1914,6 +1916,7 @@ const SettingsPage = () => {
 
             )}
 
+            {activeTab === 'evolution' && <EvolutionSettings />}
             {activeTab === 'about' && (
             <div className="space-y-4 max-w-xl">
               {/* 專案 */}

@@ -40,6 +40,7 @@ module.exports = function register(ctx) {
         }
 
         const success = ctx.hotkeyManager.registerHotkey(hotkey, () => {
+          if (ctx.hotkeyManager.getRecordingState?.() === false) { ctx.latencyManager?.noteHotkey(); ctx.learningManager?.stop('recording_started'); }
           // 熱鍵觸發時同步儲存當前前景視窗（在主進程）
           // 使用 execSync 確保在發送事件前完成
           ctx.logger.info(`热键 ${hotkey} 被触发，同步儲存前景視窗`);
@@ -125,6 +126,7 @@ module.exports = function register(ctx) {
 
         if (isFirstRegistration) {
           const success = ctx.hotkeyManager.registerF2DoubleClick((data) => {
+            if (data.action === 'start') { ctx.latencyManager?.noteHotkey(); ctx.learningManager?.stop('recording_started'); }
             // 发送F2双击事件到所有注册的渲染进程
             ctx.logger.info("发送F2双击事件到渲染进程:", data);
             ctx.f2RegisteredSenders.forEach(id => {
@@ -233,6 +235,8 @@ module.exports = function register(ctx) {
       // 設置回調函數
       ctx.typelessManager.setCallbacks({
         onStartRecording: () => {
+          ctx.latencyManager?.noteHotkey();
+          ctx.learningManager?.stop('recording_started');
           ctx.logger.info('TypeLess: 觸發開始錄音');
           // 先儲存當前前景視窗
           try {
@@ -572,6 +576,7 @@ module.exports = function register(ctx) {
 
       // 開始/停止錄音
       ctx.hotkeyManager.setActionCallback('toggle-recording', (info) => {
+        if (ctx.hotkeyManager.getRecordingState?.() === false) { ctx.latencyManager?.noteHotkey(); ctx.learningManager?.stop('recording_started'); }
         self.logger.info(`快捷鍵觸發: toggle-recording (${info.accelerator})`);
         // 儲存前景視窗
         try {
