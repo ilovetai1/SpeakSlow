@@ -5,6 +5,8 @@ class ClipboardManager {
   constructor(logger) {
     // 初始化剪贴板管理器
     this.logger = logger;
+    this.macPasteQueue = [];
+    this.macPasteRunning = false;
 
     // Windows: 儲存之前的前景視窗 handle
     this.previousForegroundWindow = null;
@@ -304,6 +306,34 @@ class ClipboardManager {
   }
 
   async pasteText(text, options = {}) {
+    if (process.platform === "darwin") {
+      return new Promise((resolve, reject) => {
+        this.macPasteQueue.push({ text, options, resolve, reject });
+        this.drainMacPasteQueue();
+      });
+    }
+    return this.performPasteText(text, options);
+  }
+
+  async drainMacPasteQueue() {
+    if (this.macPasteRunning) return;
+    this.macPasteRunning = true;
+    try {
+      while (this.macPasteQueue.length) {
+        const request = this.macPasteQueue.shift();
+        try {
+          request.resolve(await this.performPasteText(request.text, request.options));
+        } catch (error) {
+          this.safeLog("❌ macOS 自動貼上失敗", { error: error.message });
+          request.reject(error);
+        }
+      }
+    } finally {
+      this.macPasteRunning = false;
+    }
+  }
+
+  async performPasteText(text, options = {}) {
     try {
       this.safeLog("🎯 pasteText", { characterCount: [...String(text || "")].length });
       const useCurrentTarget = options.target === "current";
@@ -376,10 +406,11 @@ class ClipboardManager {
     }
 
     await new Promise((resolve) => setTimeout(resolve, 120));
-    return await this.sendMacOSPaste(originalClipboard);
+    const pastedText = clipboard.readText();
+    return await this.sendMacOSPaste(originalClipboard, pastedText);
   }
 
-  async sendMacOSPaste(originalClipboard) {
+  async sendMacOSPaste(originalClipboard, pastedText) {
     return new Promise((resolve, reject) => {
       const pasteProcess = spawn("osascript", [
         "-e",
@@ -396,12 +427,19 @@ class ClipboardManager {
         pasteProcess.removeAllListeners();
 
         if (code === 0) {
-          this.safeLog("✅ 通过 Cmd+V 模拟成功粘贴文本");
+          this.safeLog("⌨️ Cmd+V 已送出（尚未確認目標程式接收）");
           setTimeout(() => {
-            clipboard.writeText(originalClipboard);
-            this.safeLog("🔄 原始剪贴板内容已恢复");
+            try {
+              // 使用者在貼上期間另行複製文字時，不覆蓋那筆新的剪貼簿內容。
+              if (clipboard.readText() === pastedText) {
+                clipboard.writeText(originalClipboard);
+                this.safeLog("🔄 原始剪贴板内容已恢复");
+              }
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
           }, 100);
-          resolve();
         } else {
           const errorMsg = `粘贴失败 (代码 ${code})。文本已复制到剪贴板 - 请手动使用 Cmd+V 粘贴。`;
           reject(new Error(errorMsg));

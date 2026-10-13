@@ -20,6 +20,12 @@
 - `pnpm run clean` - 清理构建文件和Python环境
 - 所有构建命令(`build:mac`, `build:win`, `build:linux`)现在自动执行`prepare:python`
 
+## macOS 本机安装与更新
+
+- `/Applications/SpeakSlow.app` 是唯一允许保留的已安装应用程式副本。
+- 更新或重新安装时直接替换旧的 `/Applications/SpeakSlow.app`；不得建立或保留 `SpeakSlow.app.backup-*`、`.old`、带时间戳或编号的旧应用程式副本。
+- 安装完成后必须检查 `/Applications`，确认只剩 `/Applications/SpeakSlow.app`，并永久删除此次操作产生的旧应用程式档案。
+
 ## 关键架构模式
 
 ### FunASR服务器通信

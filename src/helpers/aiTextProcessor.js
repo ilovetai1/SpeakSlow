@@ -35,6 +35,7 @@ class AITextProcessor {
       ollama: adapters.ollama || new OllamaAdapter({ logger, runtime: this.ollamaRuntime }),
     };
     this.stopping = false;
+    this.requests = new Set();
   }
 
   _stripAIPreamble(value) {
@@ -119,9 +120,15 @@ class AITextProcessor {
     ];
   }
 
-  async processTextWithAI(text, mode = "optimize", customPrompt = null) {
+  async processTextWithAI(text, mode = "optimize", customPrompt = null, { requireEnabled = false } = {}) {
     const startedAt = Date.now();
+    const controller = new AbortController();
+    this.requests.add(controller);
     try {
+      if (requireEnabled && !customPrompt && (mode === 'optimize' || mode === 'optimize_long')
+        && await this.databaseManager.getSetting('enable_ai_optimization', false) !== true) {
+        return { success: false, code: 'polishing_disabled', error: 'AI 潤稿已關閉' };
+      }
       const config = await this._loadConfig();
       if (config.provider === "ollama" && !customPrompt && (mode === "optimize" || mode === "optimize_long") && [...text].length > MAX_TRANSCRIPT_CHARS) {
         return {
@@ -138,10 +145,12 @@ class AITextProcessor {
       const adapter = config.provider === "ollama"
         ? this.adapters.ollama
         : this.adapters.openAICompatible;
+      controller.signal.throwIfAborted();
       const result = await adapter.process({
         ...config,
         messages: this._messages(text, mode, customPrompt, polishingPrompt),
         timeoutMs: 60000,
+        signal: controller.signal,
       });
 
       if (this.stopping) {
@@ -152,6 +161,8 @@ class AITextProcessor {
           cancelled: true,
         };
       }
+
+      controller.signal.throwIfAborted();
 
       if (!result.success) return result;
       const finalText = this._stripAIPreamble(result.text);
@@ -167,6 +178,9 @@ class AITextProcessor {
           code: "runtime_stopping",
           cancelled: true,
         };
+      }
+      if (controller.signal.aborted) {
+        return { success: false, code: 'polishing_disabled', error: 'AI 潤稿已關閉' };
       }
       const timeout = error.name === "TimeoutError" || error.name === "AbortError";
       const connection = /ENOTFOUND|ECONNREFUSED|fetch failed/i.test(error.message || "");
@@ -184,20 +198,27 @@ class AITextProcessor {
             : error.message || "文字處理失敗",
         code,
       };
+    } finally {
+      this.requests.delete(controller);
     }
   }
 
   async checkAIStatus(testConfig = null) {
+    const controller = new AbortController();
+    this.requests.add(controller);
     try {
       const config = await this._loadConfig(testConfig);
       const adapter = config.provider === "ollama"
         ? this.adapters.ollama
         : this.adapters.openAICompatible;
+      controller.signal.throwIfAborted();
       const result = await adapter.process({
         ...config,
         messages: [{ role: "user", content: "請只回覆：測試成功" }],
         timeoutMs: 20000,
+        signal: controller.signal,
       });
+      controller.signal.throwIfAborted();
 
       if (!result.success) {
         return { available: false, error: result.error, details: result.error };
@@ -212,6 +233,8 @@ class AITextProcessor {
       };
     } catch (error) {
       return { available: false, error: error.message, details: error.message };
+    } finally {
+      this.requests.delete(controller);
     }
   }
 
@@ -234,7 +257,13 @@ class AITextProcessor {
 
   shutdown() {
     this.stopping = true;
+    for (const controller of this.requests) controller.abort();
     this.ollamaRuntime.shutdown();
+  }
+
+  disableOptimization() {
+    for (const controller of this.requests) controller.abort();
+    return this.ollamaRuntime.releaseResources();
   }
 }
 

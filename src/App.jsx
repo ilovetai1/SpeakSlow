@@ -8,6 +8,7 @@ import { useWindowDrag } from "./hooks/useWindowDrag";
 import { useRecording } from "./hooks/useRecording";
 import { useStreamingRecording } from "./hooks/useStreamingRecording";
 import { useModelStatus } from "./hooks/useModelStatus";
+import { useAiOptimization } from "./hooks/useAiOptimization";
 import { usePermissions } from "./hooks/usePermissions";
 import { useTranslation } from "./i18n";
 import { Mic, MicOff, Settings, Copy, Download, X, Pin, Minus, Sparkles, Minimize2, Maximize2, FileText } from "lucide-react";
@@ -372,7 +373,11 @@ export default function App() {
   const recordingStartRef = useRef(0); // 本次錄音開始時間（分辨「真聽寫」vs「撞鍵空錄音」）
   const [miniFlash, setMiniFlash] = useState(null); // 迷你模式：在小條上閃一下的訊息（取代浮動 toast）
   const miniFlashTimer = useRef(null);
-  const [aiOptimizationEnabled, setAiOptimizationEnabled] = useState(false); // AI 優化狀態
+  const { enabled: aiOptimizationEnabled, ready: aiOptimizationReady, pending: aiOptimizationPending,
+    error: aiOptimizationError, updateEnabled: setAiOptimizationEnabled } = useAiOptimization();
+  useEffect(() => {
+    if (aiOptimizationError) toast.error(aiOptimizationError.message);
+  }, [aiOptimizationError]);
   const [latestIssue, setLatestIssue] = useState(null);
 
   // 錄音完成後動作設定
@@ -403,9 +408,6 @@ export default function App() {
         const alwaysOnTop = await window.electronAPI.getSetting('window_always_on_top', true);
         setIsAlwaysOnTop(alwaysOnTop !== false);
 
-        // 載入 AI 優化狀態
-        const aiEnabled = await window.electronAPI.getSetting('enable_ai_optimization', false);
-        setAiOptimizationEnabled(aiEnabled === true);
       }
     };
     loadSettings();
@@ -421,8 +423,6 @@ export default function App() {
           setAutoEnterAfterPaste(data.value === true);
         } else if (data.key === 'window_always_on_top') {
           setIsAlwaysOnTop(data.value !== false);
-        } else if (data.key === 'enable_ai_optimization') {
-          setAiOptimizationEnabled(data.value === true);
         }
       });
       return () => {
@@ -638,9 +638,9 @@ export default function App() {
     };
   }, []);
 
-  // 統一的錄音狀態（根據模式選擇）
-  const isRecording = streamingMode ? isRecordingStreaming : isRecordingNormal;
-  const isRecordingProcessing = streamingMode ? isProcessingStreaming : isRecordingProcessingNormal;
+  // TypeLess 使用離線路徑，即使設定選擇串流也要反映真正正在錄音的來源。
+  const isRecording = isRecordingStreaming || isRecordingNormal;
+  const isRecordingProcessing = isProcessingStreaming || isRecordingProcessingNormal;
   const recordingError = streamingMode ? streamingError : recordingErrorNormal;
   // 同步錄音狀態到 ref（切換操作模式的「鬼切」判斷要讀最新值）
   useEffect(() => {
@@ -658,12 +658,12 @@ export default function App() {
   }, [streamingMode, startStreaming, startRecordingNormal]);
 
   const stopRecording = useCallback(() => {
-    if (streamingMode) {
-      stopStreaming();
-    } else {
+    if (isRecordingNormal) {
       stopRecordingNormal();
+    } else {
+      stopStreaming();
     }
-  }, [streamingMode, stopStreaming, stopRecordingNormal]);
+  }, [isRecordingNormal, stopStreaming, stopRecordingNormal]);
 
   // 防重复粘贴的引用
   const lastPasteRef = useRef({ text: '', timestamp: 0 });
@@ -1041,18 +1041,14 @@ export default function App() {
     }
   };
 
-  // 面板上快速切換 AI 潤飾（暫時關掉省 API）
+  // 以主程序廣播的已保存狀態更新兩個視窗。
   const toggleAiOptimization = useCallback(async () => {
-    const next = !aiOptimizationEnabled;
-    setAiOptimizationEnabled(next);
     try {
-      if (window.electronAPI?.setSetting) {
-        await window.electronAPI.setSetting('enable_ai_optimization', next);
-      }
-    } catch (e) {
-      /* 設定寫入失敗不影響 */
+      await setAiOptimizationEnabled(!aiOptimizationEnabled);
+    } catch (error) {
+      toast.error(error.message);
     }
-  }, [aiOptimizationEnabled]);
+  }, [aiOptimizationEnabled, setAiOptimizationEnabled]);
 
   // 处理打开设置
   const handleOpenSettings = () => {
@@ -1207,13 +1203,12 @@ export default function App() {
     };
   }, [typelessMode, isRecordingNormal, isRecordingProcessingNormal, modelStatus.isReady, startRecordingNormal, stopRecordingNormal, cancelRecordingNormal, showNotification]);
 
-  // 載入時把 TypeLess 切換狀態強制重置為「未錄音」，
-  // 避免重載/HMR/崩潰後主進程 isActive 與前端脫鉤（按鍵 off-by-one）。
+  // 浮動視窗失敗要告知使用者，不能把空白視窗當作正常顯示。
   useEffect(() => {
-    if (window.electronAPI?.syncTypelessState) {
-      window.electronAPI.syncTypelessState(false);
-    }
-  }, []);
+    return window.electronAPI?.onRecordingIndicatorError?.((message) => {
+      showNotification('error', message);
+    });
+  }, [showNotification]);
 
   // 同步录音状态到热键管理器
   useEffect(() => {
@@ -1479,6 +1474,8 @@ export default function App() {
             <Tooltip content={aiOptimizationEnabled ? t('panel.aiTooltipOn') : t('panel.aiTooltipOff')} position="bottom">
               <button
                 onClick={toggleAiOptimization}
+                disabled={!aiOptimizationReady || aiOptimizationPending}
+                aria-pressed={aiOptimizationEnabled}
                 className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors non-draggable ${
                   aiOptimizationEnabled
                     ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300'

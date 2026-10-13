@@ -34,14 +34,16 @@ class OllamaRuntime {
     this.arch = arch;
     this.ownedProcess = null;
     this.stopping = false;
-    this.requestControllers = new Set();
+    this.requestControllers = new Map();
+    this.usedModels = new Set();
+    this.releasing = null;
     this.modelCapabilities = new Map();
   }
 
-  async _healthCheck(timeoutMs = 1500) {
+  async _healthCheck(timeoutMs = 1500, signal) {
     const response = await this.fetchImpl(`${OLLAMA_ORIGIN}/api/tags`, {
       method: "GET",
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) throw new Error(`Ollama health check HTTP ${response.status}`);
     return response.json();
@@ -59,7 +61,8 @@ class OllamaRuntime {
     return null;
   }
 
-  async ensureServer() {
+  async ensureServer({ signal } = {}) {
+    signal?.throwIfAborted();
     if (this.stopping) {
       const error = new Error("Ollama runtime 正在停止");
       error.code = "runtime_stopping";
@@ -67,9 +70,11 @@ class OllamaRuntime {
     }
 
     try {
-      await this._healthCheck();
-      return { owned: false };
+      await this._healthCheck(1500, signal);
+      signal?.throwIfAborted();
+      return { owned: Boolean(this.ownedProcess) };
     } catch {
+      signal?.throwIfAborted();
       // Starting an installed server is the defined path when loopback is absent.
     }
 
@@ -96,16 +101,20 @@ class OllamaRuntime {
         stdio: "ignore",
         windowsHide: true,
       });
-      this.ownedProcess.once?.("exit", () => {
-        this.ownedProcess = null;
+      const child = this.ownedProcess;
+      child.once?.("exit", () => {
+        if (this.ownedProcess === child) this.ownedProcess = null;
       });
     }
 
     for (let attempt = 0; attempt < 20; attempt += 1) {
+      signal?.throwIfAborted();
       try {
-        await this._healthCheck(500);
+        await this._healthCheck(500, signal);
+        signal?.throwIfAborted();
         return { owned: true };
       } catch {
+        signal?.throwIfAborted();
         await this.delayImpl(250);
       }
     }
@@ -116,10 +125,23 @@ class OllamaRuntime {
   }
 
   async listModels() {
-    await this.ensureServer();
+    // 先追蹤探索請求，避免同 tick 關閉時漏掉尚未通過 await 的工作。
+    const control = this.createRequestSignal(20000);
+    try {
+      await this.releasing;
+      control.signal.throwIfAborted();
+      return await this._listModels(control.signal);
+    } finally {
+      control.release();
+    }
+  }
+
+  async _listModels(signal) {
+    await this.ensureServer({ signal });
+    signal.throwIfAborted();
     const response = await this.fetchImpl(`${OLLAMA_ORIGIN}/api/tags`, {
       method: "GET",
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
     });
     if (!response.ok) throw new Error(`Ollama models HTTP ${response.status}`);
     const data = await response.json();
@@ -128,12 +150,13 @@ class OllamaRuntime {
     const localModels = [];
 
     for (const model of candidates) {
+      signal.throwIfAborted();
       const name = model.name || model.model;
       const showResponse = await this.fetchImpl(`${OLLAMA_ORIGIN}/api/show`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: name }),
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
       });
       if (!showResponse.ok) {
         throw new Error(`Ollama model details HTTP ${showResponse.status}: ${name}`);
@@ -159,13 +182,13 @@ class OllamaRuntime {
     return this.modelCapabilities.get(model)?.has("thinking") === true;
   }
 
-  async getModelSupportsThinking(model) {
+  async getModelSupportsThinking(model, signal) {
     if (this.modelCapabilities.has(model)) return this.modelSupportsThinking(model);
     const response = await this.fetchImpl(`${OLLAMA_ORIGIN}/api/show`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model }),
-      signal: AbortSignal.timeout(5000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000),
     });
     if (!response.ok) throw new Error(`Ollama model details HTTP ${response.status}`);
     const shown = await response.json();
@@ -174,22 +197,74 @@ class OllamaRuntime {
     return capabilities.includes("thinking");
   }
 
-  createRequestSignal(timeoutMs) {
+  createRequestSignal(timeoutMs, callerSignal) {
+    if (this.stopping) throw new Error('Ollama runtime 正在停止');
     const controller = new AbortController();
-    this.requestControllers.add(controller);
+    let finish;
+    const finished = new Promise(resolve => { finish = resolve; });
+    this.requestControllers.set(controller, finished);
     const signal = AbortSignal.any([
       controller.signal,
       AbortSignal.timeout(timeoutMs),
+      ...(callerSignal ? [callerSignal] : []),
     ]);
     return {
       signal,
-      release: () => this.requestControllers.delete(controller),
+      release: () => {
+        this.requestControllers.delete(controller);
+        finish();
+      },
     };
+  }
+
+  trackModel(model) {
+    this.usedModels.add(model);
+  }
+
+  releaseResources() {
+    if (this.releasing) return this.releasing;
+    const finished = [...this.requestControllers.values()];
+    for (const controller of this.requestControllers.keys()) controller.abort();
+    this.releasing = (async () => {
+      // 包含 server 啟動與能力查詢；等取消完成後才卸載，避免晚到請求重載模型。
+      await Promise.all(finished);
+      const child = this.ownedProcess;
+      if (child) {
+        await new Promise((resolve, reject) => {
+          const onExit = () => { clearTimeout(timer); resolve(); };
+          const timer = setTimeout(() => {
+            child.removeListener('exit', onExit);
+            reject(new Error('Ollama 停止逾時，AI 潤稿已關閉但資源尚未釋放'));
+          }, 5000);
+          child.once('exit', onExit);
+          child.kill('SIGTERM');
+        });
+        if (this.ownedProcess === child) this.ownedProcess = null;
+        this.usedModels.clear();
+      } else {
+        // 僅釋放此 runtime 使用過的模型，不啟動服務、不列舉或停止其他模型。
+        for (const model of this.usedModels) {
+          const response = await this.fetchImpl(`${OLLAMA_ORIGIN}/api/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model, keep_alive: 0, stream: false }),
+            signal: AbortSignal.timeout(5000),
+          });
+          if (!response.ok) throw new Error(`Ollama 模型卸載失敗 HTTP ${response.status}`);
+          const result = await response.json();
+          if (result.done !== true || result.done_reason !== 'unload') {
+            throw new Error('Ollama 未確認模型卸載');
+          }
+          this.usedModels.delete(model);
+        }
+      }
+    })().finally(() => { this.releasing = null; });
+    return this.releasing;
   }
 
   shutdown() {
     this.stopping = true;
-    for (const controller of this.requestControllers) controller.abort();
+    for (const controller of this.requestControllers.keys()) controller.abort();
     this.requestControllers.clear();
     if (this.ownedProcess && !this.ownedProcess.killed) {
       this.ownedProcess.kill("SIGTERM");

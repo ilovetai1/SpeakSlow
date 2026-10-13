@@ -24,7 +24,10 @@ export async function finalizeTranscript({
           cancelled: true,
         };
       }
-      if (result?.success === true && typeof result.text === 'string' && result.text.trim()) {
+      if (result?.code === 'polishing_disabled') {
+        // 使用者中途關閉潤稿：正常保存原文，不標記成模型失敗。
+        finalText = rawText;
+      } else if (result?.success === true && typeof result.text === 'string' && result.text.trim()) {
         finalText = result.text.trim();
         polished = true;
       } else {

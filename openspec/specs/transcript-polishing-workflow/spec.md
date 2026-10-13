@@ -14,6 +14,18 @@ The system SHALL expose transcript polishing as a single enabled or disabled set
 - **WHEN** right-Alt transcription completes and polishing is disabled
 - **THEN** the system uses the pre-polish transcript as the final text and does not start Ollama for polishing
 
+#### Scenario: Either window changes the polishing switch
+- **WHEN** the main panel or settings window changes the polishing switch
+- **THEN** both windows reflect the same persisted value through main-process setting events
+- **AND** saving provider or prompt drafts does not write an older switch value
+- **AND** a failed setting write is reported without displaying an unsaved state
+
+#### Scenario: Polishing is disabled during a request
+- **WHEN** the user disables polishing during configuration loading, model startup, or inference
+- **THEN** the system cancels the outstanding request and ignores its late result even if polishing is quickly enabled again
+- **AND** the recording retains and saves its original transcript without a polishing-failure warning
+- **AND** subsequent automatic polishing requests remain blocked until explicitly enabled
+
 #### Scenario: Operation mode handles a voice command
 - **WHEN** the recording is being interpreted as an operation or voice command
 - **THEN** the system bypasses AI polishing and uses the non-AI transcript

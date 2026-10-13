@@ -8,7 +8,7 @@ The system SHALL provide explicit Provider, Model, and transcript-polishing sett
 
 #### Scenario: Ollama provider is selected
 - **WHEN** the user selects Ollama as the Provider
-- **THEN** the system connects to or starts the loopback Ollama service without requiring an API key
+- **THEN** the system connects to or starts the loopback Ollama service without requiring an API key when polishing is enabled or the user explicitly refreshes models
 - **AND** it lists locally available models using Ollama model APIs
 
 #### Scenario: Local models are presented
@@ -81,7 +81,18 @@ The system SHALL avoid loading an Ollama model at application startup, SHALL reu
 - **AND** it does not paste a late result
 
 ### Requirement: Model runner has a bounded sliding idle lifetime
-The system MUST assign a 10-minute idle lifetime to every local model request, SHALL reset that lifetime whenever another request is sent, and SHALL NOT immediately unload the model after a request completes.
+The system MUST assign a 10-minute idle lifetime to every local model request, SHALL reset that lifetime whenever another request is sent, and SHALL NOT immediately unload the model after a request completes unless the user explicitly disables polishing.
+
+#### Scenario: Polishing is explicitly disabled
+- **WHEN** the user disables polishing
+- **THEN** the system cancels pending local requests including startup and model discovery
+- **AND** it stops and waits for an Ollama service owned by SpeakSlow to exit
+- **AND** for an external service it sends an immediate unload request only for models used by SpeakSlow, without stopping that service
+- **AND** it reports a release failure while keeping the persisted polishing switch disabled
+
+#### Scenario: Settings is reopened while polishing is disabled
+- **WHEN** the user opens settings with polishing disabled
+- **THEN** the system does not automatically start Ollama for model discovery
 
 #### Scenario: Local request finishes with no following demand
 - **WHEN** a local request reaches a terminal outcome and no new request uses the model
@@ -95,7 +106,8 @@ The system MUST assign a 10-minute idle lifetime to every local model request, S
 
 #### Scenario: SpeakSlow shares an external Ollama server
 - **WHEN** another Ollama client uses the same model or changes its lifetime
-- **THEN** SpeakSlow does not terminate the external server or override that client's later lifecycle decision
+- **THEN** SpeakSlow does not terminate the external server or override that client's later lifecycle decision during normal request completion
+- **AND** an explicit disable may unload a model previously used by SpeakSlow, but does not unload unrelated models
 
 ### Requirement: Local content remains outside application logs and external AI endpoints
 The Ollama adapter MUST send transcript content only to the configured loopback endpoint and SHALL NOT log transcripts, prompts, model responses, or secrets.

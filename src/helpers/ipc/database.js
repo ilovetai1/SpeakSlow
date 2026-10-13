@@ -1,4 +1,4 @@
-const { ipcMain } = require("electron");
+const { ipcMain, BrowserWindow } = require("electron");
 const {
   isProtectedRendererSetting,
   redactSettingsForRenderer,
@@ -46,12 +46,18 @@ module.exports = function register(ctx) {
     return ctx.databaseManager.getSetting(key, defaultValue);
   });
 
-  ipcMain.handle("set-setting", (event, key, value) => {
-    const result = ctx.databaseManager.setSetting(key, value);
+  const saveSetting = async (event, key, value) => {
+    if (key === 'enable_ai_optimization' && typeof value !== 'boolean') {
+      throw new Error('AI 潤稿開關必須是布林值');
+    }
+    const result = await ctx.databaseManager.setSetting(key, value);
+    // 先取消工作，再廣播持久化結果；卸載失敗也保持「關」，並讓呼叫者顯示錯誤。
+    const release = key === 'enable_ai_optimization' && value === false
+      ? ctx.aiProcessor.disableOptimization()
+      : null;
 
     // 廣播設定變更到所有視窗（用於跨視窗同步）
     if (!isProtectedRendererSetting(key)) {
-      const { BrowserWindow } = require('electron');
       BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed()) {
           win.webContents.send('setting-changed', { key, value });
@@ -59,8 +65,10 @@ module.exports = function register(ctx) {
       });
     }
 
+    await release;
     return result;
-  });
+  };
+  ipcMain.handle("set-setting", saveSetting);
 
   ipcMain.handle("get-all-settings", () => {
     return redactSettingsForRenderer(ctx.databaseManager.getAllSettings());
@@ -70,9 +78,7 @@ module.exports = function register(ctx) {
     return redactSettingsForRenderer(ctx.databaseManager.getAllSettings());
   });
 
-  ipcMain.handle("save-setting", (event, key, value) => {
-    return ctx.databaseManager.setSetting(key, value);
-  });
+  ipcMain.handle("save-setting", saveSetting);
 
   ipcMain.handle("reset-settings", () => {
     // TODO: 实现重置设置功能

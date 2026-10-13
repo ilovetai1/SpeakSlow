@@ -241,10 +241,6 @@ module.exports = function register(ctx) {
           } catch (err) {
             ctx.logger.warn('TypeLess: 儲存前景視窗失敗:', err.message);
           }
-          // 顯示錄音指示器視窗
-          if (ctx.windowManager) {
-            ctx.windowManager.showTypelessIndicator();
-          }
           // 發送開始錄音事件到渲染進程
           require("electron").BrowserWindow.getAllWindows().forEach((w) => {
             if (!w.isDestroyed()) w.webContents.send("typeless-start-recording");
@@ -252,10 +248,6 @@ module.exports = function register(ctx) {
         },
         onStopRecording: () => {
           ctx.logger.info('TypeLess: 觸發停止錄音');
-          // 隱藏錄音指示器視窗
-          if (ctx.windowManager) {
-            ctx.windowManager.hideTypelessIndicator();
-          }
           // 發送停止錄音事件到渲染進程
           require("electron").BrowserWindow.getAllWindows().forEach((w) => {
             if (!w.isDestroyed()) w.webContents.send("typeless-stop-recording");
@@ -268,10 +260,6 @@ module.exports = function register(ctx) {
           require("electron").BrowserWindow.getAllWindows().forEach((w) => {
             if (!w.isDestroyed()) w.webContents.send("tts-stop");
           });
-          // 隱藏錄音指示器視窗
-          if (ctx.windowManager) {
-            ctx.windowManager.hideTypelessIndicator();
-          }
           // 發送取消錄音事件到渲染進程（丟棄音訊、不轉錄、不貼上）
           require("electron").BrowserWindow.getAllWindows().forEach((w) => {
             if (!w.isDestroyed()) w.webContents.send("typeless-cancel-recording");
@@ -333,6 +321,10 @@ module.exports = function register(ctx) {
     try {
       if (ctx.typelessManager) {
         ctx.typelessManager.syncActiveState(isRecording);
+      }
+      if (ctx.windowManager) {
+        if (isRecording) ctx.windowManager.showTypelessIndicator();
+        else ctx.windowManager.hideTypelessIndicator();
       }
       return { success: true };
     } catch (error) {

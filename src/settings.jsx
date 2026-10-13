@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import { toast, Toaster } from "sonner";
 import { Settings, Save, Eye, EyeOff, X, Loader2, TestTube, CheckCircle, XCircle, Mic, Shield, Globe, Keyboard, Sparkles, BookText, Tag, History, Info, Heart, Smile } from "lucide-react";
+import { useAiOptimization } from "./hooks/useAiOptimization";
 import { usePermissions } from "./hooks/usePermissions";
 import PermissionCard from "./components/ui/permission-card";
 import HotkeySettings from "./components/HotkeySettings";
@@ -41,6 +42,10 @@ const formatModelSize = (bytes) => {
 const SettingsPage = () => {
   const { t, language, setLanguage, languages } = useTranslation();
   const [activeTab, setActiveTab] = useState('general');
+  const aiOptimization = useAiOptimization();
+  useEffect(() => {
+    if (aiOptimization.error) toast.error(aiOptimization.error.message);
+  }, [aiOptimization.error]);
 
   const [settings, setSettings] = useState({
     ai_provider: "openai",
@@ -48,7 +53,6 @@ const SettingsPage = () => {
     ai_base_url: "https://api.openai.com/v1",
     ai_model: "gpt-4o-mini",
     transcript_polishing_prompt: "",
-    enable_ai_optimization: false,
     enable_notifications: true,
     enable_streaming_mode: false,
     language: "zh-TW",
@@ -276,7 +280,6 @@ const SettingsPage = () => {
             ? allSettings.ollama_model || allSettings.ai_model || ''
             : allSettings.ai_model || "gpt-4o-mini",
           transcript_polishing_prompt: transcriptPolishingPrompt,
-          enable_ai_optimization: allSettings.enable_ai_optimization === true, // 默认为false
           enable_notifications: allSettings.enable_notifications !== false, // 默认为true
           enable_streaming_mode: allSettings.enable_streaming_mode === true, // 默認關閉
           language: allSettings.language || "zh-TW", // 默认繁体中文
@@ -340,7 +343,6 @@ const SettingsPage = () => {
           await window.electronAPI.setSetting('ollama_model', settings.ai_model);
         }
         await window.electronAPI.setTranscriptPolishingPrompt(transcriptPolishingPrompt);
-        await window.electronAPI.setSetting('enable_ai_optimization', settings.enable_ai_optimization);
         setSettings((current) => ({
           ...current,
           transcript_polishing_prompt: transcriptPolishingPrompt,
@@ -402,6 +404,15 @@ const SettingsPage = () => {
 
   // 处理开关切换并自动保存
   const handleToggleChange = async (key, value) => {
+    if (key === 'enable_ai_optimization') {
+      try {
+        await aiOptimization.updateEnabled(value);
+        toast.success(value ? t('notifications.aiEnabled') : t('notifications.aiDisabled'));
+      } catch (error) {
+        toast.error(error.message);
+      }
+      return;
+    }
     setSettings(prev => ({
       ...prev,
       [key]: value
@@ -412,9 +423,7 @@ const SettingsPage = () => {
       if (window.electronAPI) {
         await window.electronAPI.setSetting(key, value);
         // 根据不同的设置项显示不同的提示
-        if (key === 'enable_ai_optimization') {
-          toast.success(value ? t('notifications.aiEnabled') : t('notifications.aiDisabled'));
-        } else if (key === 'enable_notifications') {
+        if (key === 'enable_notifications') {
           toast.success(value ? t('notifications.enabled') : t('notifications.disabled'));
         } else if (key === 'enable_streaming_mode') {
           toast.success(value ? t('settings.streamingEnabled') : t('settings.streamingDisabled'));
@@ -601,10 +610,10 @@ const SettingsPage = () => {
   };
 
   useEffect(() => {
-    if (settings.ai_provider === 'ollama' && !ollamaModelsLoaded && !ollamaModelsLoading) {
+    if (aiOptimization.enabled && settings.ai_provider === 'ollama' && !ollamaModelsLoaded && !ollamaModelsLoading) {
       refreshOllamaModels();
     }
-  }, [settings.ai_provider, ollamaModelsLoaded, ollamaModelsLoading]);
+  }, [aiOptimization.enabled, settings.ai_provider, ollamaModelsLoaded, ollamaModelsLoading]);
 
   // 关闭窗口
   const handleClose = () => {
@@ -1477,17 +1486,18 @@ const SettingsPage = () => {
                  <button
                    type="button"
                    role="switch"
-                   aria-checked={settings.enable_ai_optimization}
-                   disabled={settings.ai_provider === 'ollama' && !settings.enable_ai_optimization && ollamaModelsLoaded && !ollamaModels.some((model) => model.name === settings.ai_model)}
-                   onClick={() => handleToggleChange('enable_ai_optimization', !settings.enable_ai_optimization)}
+                   id="ai-optimization-toggle"
+                   aria-checked={aiOptimization.enabled}
+                   disabled={!aiOptimization.ready || aiOptimization.pending || (settings.ai_provider === 'ollama' && !aiOptimization.enabled && ollamaModelsLoaded && !ollamaModels.some((model) => model.name === settings.ai_model))}
+                   onClick={() => handleToggleChange('enable_ai_optimization', !aiOptimization.enabled)}
                    className={`${
-                     settings.enable_ai_optimization ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+                     aiOptimization.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
                    } relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2`}
                  >
                    <span
                      aria-hidden="true"
                      className={`${
-                       settings.enable_ai_optimization ? 'translate-x-4' : 'translate-x-0'
+                       aiOptimization.enabled ? 'translate-x-4' : 'translate-x-0'
                      } inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
                    />
                  </button>
@@ -1599,7 +1609,9 @@ const SettingsPage = () => {
                     className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-60"
                   >
                     {settings.ai_model && !ollamaModels.some((model) => model.name === settings.ai_model) && (
-                      <option value={settings.ai_model}>{settings.ai_model}（目前無法使用）</option>
+                      <option value={settings.ai_model}>
+                        {settings.ai_model}（{ollamaModelsLoaded ? '目前無法使用' : '尚未查詢'}）
+                      </option>
                     )}
                     {!settings.ai_model && <option value="">請選擇模型</option>}
                     {ollamaModels.map((model) => (

@@ -157,7 +157,7 @@ try {
 }
 
 // 初始化 windowManager，傳入 databaseManager 以支援設定讀取
-const windowManager = new WindowManager(databaseManager);
+const windowManager = new WindowManager(databaseManager, logger);
 const trayManager = new TrayManager();
 
 // IPC处理器将在 app ready 后初始化

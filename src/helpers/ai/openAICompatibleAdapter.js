@@ -12,7 +12,7 @@ class OpenAICompatibleAdapter {
       : `${normalized}/chat/completions`;
   }
 
-  async process({ apiKey, baseUrl, model, messages, timeoutMs = 60000 }) {
+  async process({ apiKey, baseUrl, model, messages, timeoutMs = 60000, signal }) {
     if (!apiKey) {
       return { success: false, error: "請先在設定頁面配置 AI API key", code: "api_key_missing" };
     }
@@ -31,7 +31,7 @@ class OpenAICompatibleAdapter {
         max_tokens: 2000,
         stream: false,
       }),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {

@@ -29,6 +29,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getAlwaysOnTop: () => ipcRenderer.invoke("get-always-on-top"),
 
   // 录音相关
+  onRecordingIndicatorError: (callback) => {
+    const handler = (_event, message) => callback(message);
+    ipcRenderer.on("recording-indicator-error", handler);
+    return () => ipcRenderer.removeListener("recording-indicator-error", handler);
+  },
   startRecording: () => ipcRenderer.invoke("start-recording"),
   stopRecording: () => ipcRenderer.invoke("stop-recording"),
   onToggleDictation: (callback) => {
