@@ -14,7 +14,9 @@
 
 ## 版本與取得方式
 
-這是 `ilovetai1/SpeakSlow` fork 的 **2.0.0 原始碼**；`main` 已包含原生 Ollama 模型選擇、錄音後潤稿、自訂提示詞與歷史重新潤稿。
+這是 `ilovetai1/SpeakSlow` fork 的 **2.1.0 開發版原始碼**；現有功能包含原生 Ollama 模型選擇、錄音後潤稿、自訂提示詞與歷史重新潤稿。
+
+**2.1.0 的情境潤稿、本機改錯學習與延遲量測目前只有規劃，尚未實作或發佈。** 提案、設計、規格與任務位於 [2.1.0 OpenSpec change](openspec/changes/add-context-learning-and-latency-metrics/proposal.md)。此版本不規劃貼上／Enter 重構、完整錄音取消狀態機或歷史救援改造。
 
 - **取得本次功能**：使用本 fork 的 `main` 分支，或由維護者提供明確從此版本建置的安裝檔。
 - **本 fork 安裝檔**：查看 [Releases](https://github.com/ilovetai1/SpeakSlow/releases)。截至 2026-09-07 尚未建立 Release；推送原始碼不會自動產生新版安裝檔。
