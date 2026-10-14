@@ -1,4 +1,5 @@
-const { BrowserWindow } = require("electron");
+const { BrowserWindow, app } = require("electron");
+const { performance } = require("node:perf_hooks");
 const path = require("path");
 const {
   INDICATOR_WIDTH,
@@ -19,6 +20,9 @@ class WindowManager {
     this.settingsWindow = null;
     this.typelessIndicatorWindow = null; // TypeLess 錄音指示器視窗
     this.isQuitting = false; // 用於判斷是否真正退出
+    this._dockHideTimer = null;
+    this._dockLastHide = -Infinity;
+    this._dockWantsVisible = true;
     this._miniRepaintTimer = null; // 迷你模式期間的低頻重繪心跳（防閒置鬼影）
     this.isMini = false; // 視窗目前是否為迷你尺寸（渲染端重載後用來重新同步）
     this.commandMode = false; // 操作模式（主行程鏡像，給錄音指示器藥丸用）
@@ -62,6 +66,33 @@ class WindowManager {
   // 避免「視窗是迷你尺寸、但 React 畫成正常面板」的狀態錯位。
   getMiniState() {
     return !!this.isMini;
+  }
+
+  // Dock follows the main panel; the menu-bar Tray remains alive while hidden.
+  _syncMainDock() {
+    if (process.platform !== 'darwin' || !app.dock || this.isQuitting) return;
+    this._dockWantsVisible = !!this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.isVisible();
+    clearTimeout(this._dockHideTimer);
+    this._dockHideTimer = null;
+    const report = error => this.logger?.error('更新 macOS Dock 顯示失敗', { message: error.message });
+    const record = () => this.logger?.info('macOS Dock 狀態', { visible: app.dock.isVisible(), mainVisible: this._dockWantsVisible });
+    if (this._dockWantsVisible) {
+      Promise.resolve(app.dock.show()).then(() => {
+        // A close can arrive while the asynchronous show is still pending.
+        if (!this._dockWantsVisible) this._syncMainDock();
+        else record();
+      }).catch(report);
+    } else {
+      const hide = () => {
+        this._dockHideTimer = null;
+        if (this.isQuitting || this._dockWantsVisible) return;
+        try { app.dock.hide(); this._dockLastHide = performance.now(); record(); } catch (error) { report(error); }
+      };
+      // Electron ignores hide calls less than one second apart.
+      const wait = 1100 - (performance.now() - this._dockLastHide);
+      if (wait > 0) this._dockHideTimer = setTimeout(hide, wait);
+      else hide();
+    }
   }
 
   // 設置 databaseManager（用於延遲初始化）
@@ -165,6 +196,7 @@ class WindowManager {
 
     this.mainWindow.on("closed", () => {
       this.mainWindow = null;
+      this._syncMainDock();
     });
 
     // 套用使用者設定的視窗透明度（迷你 / 一般面板共用同一個值）
@@ -182,7 +214,8 @@ class WindowManager {
     // 可能被系統縮成怪尺寸（實測被縮成 216×214、還掛到螢幕外 x=-350），而 resizable:false
     // 讓使用者完全無法拖回 → 版面整個擠爛（標題直排、按鈕爆版）且重開內容也一樣。
     // 顯示 / 還原 / 聚焦時檢查：非迷你而尺寸偏離 472×470 或跑出螢幕 → 強制矯正。
-    this.mainWindow.on("show", () => this._healMainBounds());
+    this.mainWindow.on("show", () => { this._healMainBounds(); this._syncMainDock(); });
+    this.mainWindow.on("hide", () => this._syncMainDock());
     this.mainWindow.on("restore", () => this._healMainBounds());
     this.mainWindow.on("focus", () => this._healMainBounds());
     // 雙螢幕 / 顯示縮放變動（插拔螢幕、改縮放）也會觸發透明視窗被縮 → 一併自癒
@@ -193,6 +226,7 @@ class WindowManager {
       screen.on("display-removed", () => this._healMainBounds());
     } catch (e) { /* ignore */ }
     this._healMainBounds();
+    this._syncMainDock();
 
     return this.mainWindow;
   }

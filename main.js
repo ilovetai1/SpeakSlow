@@ -210,12 +210,6 @@ async function startApp() {
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 
-  // 确保macOS上dock可见
-  if (process.platform === 'darwin' && app.dock) {
-    app.dock.show();
-    logger.info('macOS Dock已显示');
-  }
-
   // 移除預設應用選單列（Win/Linux）：按 Alt 會啟動選單列、把右 Alt 的 keyup 吃掉，
   // 導致錄音 toggle 卡在「錄音中」停不下來（採自 PR #14 jaylooloomi 的觀察）。
   // 跟我們既有的 gap<600 解鎖是不同根因、互補。Mac 保留全域選單（Cmd 系快捷鍵需要）。
