@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import { toast, Toaster } from "sonner";
 import { Settings, Save, Eye, EyeOff, X, Loader2, TestTube, CheckCircle, XCircle, Mic, Shield, Globe, Keyboard, Sparkles, BookText, Tag, History, Info, Heart, Smile } from "lucide-react";
 import { useAiOptimization } from "./hooks/useAiOptimization";
 import { usePermissions } from "./hooks/usePermissions";
+import { useMicrophoneMonitor } from "./hooks/useMicrophoneMonitor";
 import PermissionCard from "./components/ui/permission-card";
 import HotkeySettings from "./components/HotkeySettings";
 import SpeechEngineSettings from './components/SpeechEngineSettings';
@@ -98,10 +99,15 @@ const SettingsPage = () => {
   const [micDevices, setMicDevices] = useState([]); // 可選的麥克風清單
   const [runtimeInfo, setRuntimeInfo] = useState(null);
   const [appVersion, setAppVersion] = useState(''); // 真實版本號（issue #15：別再寫死 v1.0.1）
-  const [micMonitorLevel, setMicMonitorLevel] = useState(0);
-  const [micMonitorError, setMicMonitorError] = useState("");
-  const [micMonitorActive, setMicMonitorActive] = useState(false);
-  const micMonitorRef = useRef({ raf: 0, context: null, stream: null });
+  const micMonitor = useMicrophoneMonitor({
+    enabled: activeTab === 'general' && !speechStatus.busy,
+    deviceId: settings.mic_device_id,
+    autoGain: settings.mic_auto_gain,
+  });
+  const micMonitorLevel = micMonitor.level;
+  const micMonitorActive = micMonitor.state === 'listening';
+  const micMonitorRunning = micMonitor.state !== 'idle';
+  const micMonitorError = micMonitor.error ? t(micMonitor.error === 'unsupported' ? 'settings.micLevelUnsupported' : 'settings.micLevelUnavailable') : '';
 
   // 权限管理
   const showAlert = (alert) => {
@@ -174,93 +180,6 @@ const SettingsPage = () => {
     return () => navigator.mediaDevices?.removeEventListener?.('devicechange', loadMics);
   }, []);
 
-  useEffect(() => {
-    const stopMicMonitor = () => {
-      if (micMonitorRef.current.raf) cancelAnimationFrame(micMonitorRef.current.raf);
-      micMonitorRef.current.raf = 0;
-      if (micMonitorRef.current.stream) {
-        micMonitorRef.current.stream.getTracks().forEach((track) => track.stop());
-      }
-      micMonitorRef.current.stream = null;
-      if (micMonitorRef.current.context) {
-        micMonitorRef.current.context.close().catch(() => {});
-      }
-      micMonitorRef.current.context = null;
-      setMicMonitorActive(false);
-      setMicMonitorLevel(0);
-    };
-
-    if (activeTab !== 'general') {
-      stopMicMonitor();
-      return stopMicMonitor;
-    }
-
-    let cancelled = false;
-
-    const startMicMonitor = async () => {
-      stopMicMonitor();
-      setMicMonitorError("");
-
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setMicMonitorError(t('settings.micLevelUnsupported'));
-        return;
-      }
-
-      const audioConstraints = {
-        sampleRate: 16000,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: settings.mic_auto_gain !== false,
-      };
-      if (settings.mic_device_id) {
-        audioConstraints.deviceId = { exact: settings.mic_device_id };
-      }
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        const audioContext = new AudioContextClass();
-        const source = audioContext.createMediaStreamSource(stream);
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 1024;
-        source.connect(analyser);
-
-        const samples = new Uint8Array(analyser.fftSize);
-        micMonitorRef.current = { ...micMonitorRef.current, context: audioContext, stream };
-        setMicMonitorActive(true);
-
-        const tick = () => {
-          analyser.getByteTimeDomainData(samples);
-          let sum = 0;
-          for (const sample of samples) {
-            const centered = (sample - 128) / 128;
-            sum += centered * centered;
-          }
-          const rms = Math.sqrt(sum / samples.length);
-          setMicMonitorLevel(Math.min(1, rms * 8));
-          micMonitorRef.current.raf = requestAnimationFrame(tick);
-        };
-        tick();
-      } catch (err) {
-        if (!cancelled) {
-          setMicMonitorError(t('settings.micLevelUnavailable'));
-        }
-      }
-    };
-
-    startMicMonitor();
-
-    return () => {
-      cancelled = true;
-      stopMicMonitor();
-    };
-  }, [activeTab, settings.mic_device_id, settings.mic_auto_gain, t]);
 
   const selectedMic = micDevices.find((device) => device.deviceId === settings.mic_device_id);
   const selectedMicLabel = settings.mic_device_id
@@ -622,6 +541,7 @@ const SettingsPage = () => {
 
   // 关闭窗口
   const handleClose = () => {
+    micMonitor.stop();
     if (window.electronAPI) {
       window.electronAPI.hideSettingsWindow();
     }
@@ -819,7 +739,7 @@ const SettingsPage = () => {
                           ? 'text-emerald-700 dark:text-emerald-300'
                           : 'text-gray-500 dark:text-gray-400'
                     }`}>
-                      {micMonitorError || (micMonitorActive ? t('settings.micLevelListening') : t('settings.micLevelStarting'))}
+                      {micMonitorError || (micMonitorActive ? t('settings.micLevelListening') : t(micMonitor.state === 'starting' ? 'settings.micLevelStarting' : 'settings.micLevelIdle'))}
                     </span>
                   </div>
                   <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
@@ -835,6 +755,10 @@ const SettingsPage = () => {
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                     {t('settings.micLevelHint')}
                   </p>
+                  <button type="button" disabled={!micMonitorRunning && speechStatus.busy} onClick={micMonitorRunning ? micMonitor.stop : micMonitor.start} className="mt-2 rounded-lg border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-600 disabled:opacity-50">
+                    {t(micMonitorRunning ? 'settings.micLevelStop' : 'settings.micLevelStart')}
+                  </button>
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{t('settings.micLevelLimit')}</p>
                 </div>
 
                 {/* 自動增益（AGC）：好麥克風可關掉，避免靜音時放大噪音導致幻聽 */}
