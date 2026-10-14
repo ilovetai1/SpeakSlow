@@ -17,7 +17,7 @@
 
 **Non-Goals:**
 
-- 不重寫一般 paste／Enter 交易、不建立完整錄音取消狀態機、不改歷史／音檔救援與留存。對应前次報告項目 1、2、5 不列入此 change。
+- 不重寫一般 paste／Enter 交易、不建立完整錄音取消狀態機、不改歷史／音檔救援與留存。這些項目不列入此 change。
 - 不更換 ASR／LLM、擴大既有 Ollama context 或長稿上限、不自動下载模型、不重寫 AudioWorklet／錄音引擎。
 - 不加入雲端 personalization、對遠端 provider 傳送周邊文字、全螢幕掃描、OCR、瀏覽器擴充、網站內容爬取或語音網頁動作。
 - 本次不實作新功能、不發佈／tag／push、不打包或替換 `/Applications/SpeakSlow.app`。
@@ -26,7 +26,7 @@
 
 ### 1. 先做量測基線，再做情境與學習
 
-先加入 `LatencyManager` 與 content-free instrumentation。取得相同錄音／model／硬體下的基線，再逐項開啟 context、learning，分開評估額外成本。不能由 Typeless 行銷速度或不同 ASR 部署方式推論性能優勢。
+先加入 `LatencyManager` 與 content-free instrumentation。取得相同錄音／model／硬體下的基線，再逐項開啟 context、learning，分開評估額外成本。不能由其他產品的行銷速度或不同 ASR 部署方式推論性能優勢。
 
 2.1.0 的交付是量測能力與有證據的結果；AudioWorklet、有界 PCM buffer 或模型替換屬量測後的獨立決策，不直接加入本版本任務。
 

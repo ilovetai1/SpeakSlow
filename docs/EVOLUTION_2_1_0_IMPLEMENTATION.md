@@ -1,6 +1,6 @@
 # SpeakSlow 2.1.0 開發版實作
 
-本版實作 Typeless 評估的第 3、4、6 項：寫作情境、本機改錯學習、延遲觀測。已以 Apple Development 簽章安裝至本機 `/Applications/SpeakSlow.app`。維持開發版；完整實機驗收與正式發佈尚未完成。
+本版實作寫作情境、本機改錯學習與延遲觀測。已以 Apple Development 簽章安裝至本機 `/Applications/SpeakSlow.app`。維持開發版；完整實機驗收與正式發佈尚未完成。
 
 ## 使用方式
 

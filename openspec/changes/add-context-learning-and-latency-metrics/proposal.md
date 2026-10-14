@@ -9,7 +9,7 @@ SpeakSlow 已有本機 ASR、Ollama 潤稿與手動改錯字典，但自動潤�
 - 新增可停用的 macOS 唯讀 context reader，讀取可編輯欄位身份與有限的選取／前後文字。文字情境第一版只供本機 Ollama 使用，預設關閉，不傳給遠端 provider。
 - 新增預設關閉的本機改錯追蹤：只觀察本次輸入片段，產生待核准候選；核准後建立有 App 範圍的字典規則，可忽略或撤回。既有面板手動改錯與全域字典保持原契約。
 - 將桌面 package 與 lockfile 版本從 2.0.0 更新為 **2.1.0 開發版**；本次交付是規劃，功能任務保持未完成，不建立 release/tag 或安裝新版。
-- 明確排除上一份评估的項目 1、2、5：不重寫貼上／Enter 交易，不新增完整錄音取消狀態機，不改歷史／音檔救援與留存策略。context 的欄位身份檢查只用於情境與學習，correlation ID 只用於量測。
+- 明確排除以下範圍：不重寫貼上／Enter 交易，不新增完整錄音取消狀態機，不改歷史／音檔救援與留存策略。context 的欄位身份檢查只用於情境與學習，correlation ID 只用於量測。
 
 ## Capabilities
 
@@ -30,4 +30,3 @@ SpeakSlow 已有本機 ASR、Ollama 潤稿與手動改錯字典，但自動潤�
 - 新增自有 macOS 唯讀 Swift helper、ContextManager、CorrectionLearningManager 與 LatencyManager。需要 helper 建置／簽章／封裝驗收，但不執行競品 binary 或重用競品程式碼。
 - 候選與字典範圍 metadata 使用版本化的 settings JSON 與既有 SQLite transaction；不新增／修改 history schema，不做資料庫 migration。
 - 情境與被動改錯先驗收 macOS Apple Silicon；其他平台維持既有流程且明示不支援新 reader。延遲 manager 與 profile 邏輯保留跨平台介面，未測的平台不能宣稱驗收完成。
-- 本機 Typeless 逆向資料只提供設計證據；完整 report 在 `docs/TYPELESS_REA_ASSESSMENT_2026-10-13.md`，不是整體 runtime 或雲端模型驗證。
