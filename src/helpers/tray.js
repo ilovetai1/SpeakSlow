@@ -33,7 +33,7 @@ class TrayManager {
       if (iconPath && require("fs").existsSync(iconPath)) {
         trayIcon = nativeImage.createFromPath(iconPath);
         if (process.platform === "darwin") {
-          trayIcon = trayIcon.resize({ width: 16, height: 16 });
+          // 專用 16px 模板圖示會自動載入同名 @2x 素材，保留 Retina 表示。
           trayIcon.setTemplateImage(true);
         }
       } else {
@@ -73,8 +73,11 @@ class TrayManager {
   getTrayIconPath() {
     // assets 打包在 app.asar 內，fs/nativeImage 可透明讀取 asar 路徑，
     // 因此 dev 與打包都用 __dirname 相對路徑（舊版指向 resources/assets
-    // 在打包後不存在 → 托盤變成空白圖示）。Windows 用 .ico（各 DPI 清晰）。
-    const file = process.platform === "win32" ? "icon.ico" : "icon.png";
+    // 在打包後不存在 → 托盤變成空白圖示）。macOS 使用透明單色模板，
+    // Windows 使用多尺寸 .ico，Linux 使用彩色 PNG。
+    const file = process.platform === "darwin"
+      ? "trayTemplate.png"
+      : process.platform === "win32" ? "icon.ico" : "icon.png";
     return path.join(__dirname, "..", "..", "assets", file);
   }
 
