@@ -53,7 +53,9 @@ module.exports = function register(ctx) {
     if (key === 'writing_profile' && !['neutral', 'message', 'email', 'note', 'auto'].includes(value)) throw new Error('writing_profile_invalid');
     if (key === 'writing_profile_apps' && (!value || typeof value !== 'object' || Array.isArray(value) || Object.entries(value).some(([id, profile]) => !require('../correctionLearningManager').bundle(id) || !['neutral', 'message', 'email', 'note'].includes(profile)))) throw new Error('writing_profile_invalid');
     if (key === 'context_app_denylist' && (!Array.isArray(value) || value.length > 100 || value.some(id => !require('../correctionLearningManager').bundle(id)))) throw new Error('scope_invalid');
-    const result = await ctx.databaseManager.setSetting(key, value);
+    const result = ['asr_engine', 'apple_response_profile'].includes(key)
+      ? await ctx.speechEngineManager.select(key, value)
+      : await ctx.databaseManager.setSetting(key, value);
     if (key === 'latency_metrics_enabled') ctx.latencyManager?.configure(value);
     if ((key === 'context_aware_polishing_enabled' || key === 'enable_ai_optimization') && value === false) ctx.contextManager?.reset();
     if (key === 'local_correction_learning_enabled' && value === false) ctx.learningManager?.stop('off');

@@ -25,8 +25,10 @@ const STREAMING_MODEL_CONFIG = {
 class SherpaManager {
   constructor(logger = null, options = {}) {
     this.logger = logger || console;
-    this.pythonResolver = new PythonResolver(this.logger);
+    this.audioStore = new (require("./audioStore"))(this.logger);
+    this.pythonResolver = new PythonResolver(this.logger, { userDataPath: options.userDataPath });
     this.platform = options.platform || process.platform;
+    this.utilityOnly = options.utilityOnly === true;
     this.userDataPath = options.userDataPath || null;
     this.projectRoot = options.projectRoot || path.join(__dirname, "..", "..");
     this.spawnFn = options.spawnFn || spawn;
@@ -37,6 +39,7 @@ class SherpaManager {
     this.initializationPromise = null;
     this.serverProcess = null;
     this.serverReady = false;
+    this.runtimeGeneration = 0;
     this.modelsDownloaded = null;
 
     // Sherpa-ONNX 模型配置（比 FunASR 簡單得多）
@@ -564,12 +567,13 @@ class SherpaManager {
   }
 
   async _startSherpaServer() {
+    const generation = this.runtimeGeneration;
     try {
       this.logger.info && this.logger.info("啟動 Sherpa 服務器...");
 
       // 打包的 sherpa_server.exe 自帶 sherpa-onnx，免檢查系統 Python。
       const _bundled = this.getBundledServerExe();
-      if (!(_bundled && fs.existsSync(_bundled))) {
+      if (!this.utilityOnly && !(_bundled && fs.existsSync(_bundled))) {
         const status = await this.checkSherpaInstallation();
         if (!status.installed) {
           this.logger.warn &&
@@ -617,9 +621,10 @@ class SherpaManager {
       return new Promise((resolve) => {
         const modelPath = this.getModelCachePath();
 
+        if (generation !== this.runtimeGeneration) { resolve(); return; }
         this.serverProcess = spawn(
           command,
-          [...baseArgs, "--model-dir", modelPath],
+          [...baseArgs, ...(this.utilityOnly ? ["--utility-only"] : []), "--model-dir", modelPath],
           {
             stdio: ["pipe", "pipe", "pipe"],
             windowsHide: true,
@@ -627,6 +632,7 @@ class SherpaManager {
           }
         );
 
+        const ownedProcess = this.serverProcess;
         let initResponseReceived = false;
 
         this.serverProcess.stdout.on("data", (data) => {
@@ -637,7 +643,7 @@ class SherpaManager {
 
           for (const line of lines) {
             this.logger.debug &&
-              this.logger.debug("Sherpa 服務器輸出", { line });
+              this.logger.debug("Sherpa 服務器輸出", { code: "response_received" });
             try {
               const result = JSON.parse(line);
 
@@ -661,23 +667,21 @@ class SherpaManager {
               }
             } catch (parseError) {
               this.logger.debug &&
-                this.logger.debug("Sherpa 服務器非 JSON 輸出", { line });
+                this.logger.debug("Sherpa 服務器非 JSON 輸出", { code: "non_protocol_output" });
             }
           }
         });
 
         this.serverProcess.stderr.on("data", (data) => {
-          const errorOutput = data.toString();
           this.logger.error &&
-            this.logger.error("Sherpa 服務器錯誤輸出", { errorOutput });
+            this.logger.debug?.("Sherpa 服務器診斷輸出", { code: "backend_diagnostic" });
         });
 
         this.serverProcess.on("close", (code) => {
           this.logger.warn &&
             this.logger.warn("Sherpa 服務器進程退出", { code });
-          this.serverProcess = null;
-          this.serverReady = false;
-          this.modelsInitialized = false;
+          if (this.serverProcess === ownedProcess) { this.serverProcess = null; this.serverReady = false; this.modelsInitialized = false; }
+          if (generation === this.runtimeGeneration) this.onRuntimeExit?.();
 
           if (!initResponseReceived) {
             resolve();
@@ -687,8 +691,8 @@ class SherpaManager {
         this.serverProcess.on("error", (error) => {
           this.logger.error &&
             this.logger.error("Sherpa 服務器進程錯誤", error);
-          this.serverProcess = null;
-          this.serverReady = false;
+          if (this.serverProcess === ownedProcess) { this.serverProcess = null; this.serverReady = false; }
+          if (generation === this.runtimeGeneration) this.onRuntimeExit?.();
 
           if (!initResponseReceived) {
             resolve();
@@ -727,40 +731,28 @@ class SherpaManager {
   }
 
   _dispatchServerCommand(command) {
+    const child = this.serverProcess;
+    if (!child || child.exitCode !== null) return Promise.reject(new Error('sherpa_not_ready'));
     return new Promise((resolve, reject) => {
-      let responseReceived = false;
-
-      const onData = (data) => {
-        if (responseReceived) return;
-
-        const lines = data
-          .toString()
-          .split("\n")
-          .filter((line) => line.trim());
-
-        for (const line of lines) {
-          try {
-            const result = JSON.parse(line);
-            responseReceived = true;
-            this.serverProcess.stdout.removeListener("data", onData);
-            resolve(result);
-            return;
-          } catch (parseError) {
-            // 忽略非 JSON 輸出
-          }
+      let buffered = '', settled = false;
+      const finish = (error, result) => {
+        if (settled) return; settled = true; clearTimeout(timer);
+        child.stdout.removeListener('data', onData); child.removeListener('exit', onExit);
+        if (error) reject(error); else resolve(result);
+      };
+      const onExit = () => finish(new Error('sherpa_exited'));
+      const onData = chunk => {
+        buffered += chunk.toString();
+        if (Buffer.byteLength(buffered) > 1048576) { child.kill(); finish(new Error('sherpa_response_invalid')); return; }
+        let index;
+        while ((index = buffered.indexOf('\n')) >= 0) {
+          const line = buffered.slice(0, index); buffered = buffered.slice(index + 1);
+          try { finish(null, JSON.parse(line)); return; } catch { /* wait for a protocol line */ }
         }
       };
-
-      this.serverProcess.stdout.on("data", onData);
-      this.serverProcess.stdin.write(JSON.stringify(command) + "\n");
-
-      setTimeout(() => {
-        if (!responseReceived) {
-          responseReceived = true;
-          this.serverProcess.stdout.removeListener("data", onData);
-          reject(new Error("服務器響應超時"));
-        }
-      }, 60000);
+      const timer = setTimeout(() => { child.kill(); finish(new Error('sherpa_timeout')); }, 60000);
+      child.once('exit', onExit); child.stdout.on('data', onData);
+      child.stdin.write(JSON.stringify(command) + '\n', error => { if (error) finish(new Error('sherpa_pipe')); });
     });
   }
 
@@ -911,105 +903,10 @@ class SherpaManager {
     }
   }
 
-  // 背景持久化錄音：立刻回傳目的路徑，複製與暫存清理非同步完成。
-  _persistAudioInBackground(tempAudioPath) {
-    try {
-      const userDataPath = require("electron").app.getPath("userData");
-      const audioDir = path.join(userDataPath, "audio");
-      const destPath = path.join(audioDir, `rec_${crypto.randomUUID()}.wav`);
-      (async () => {
-        try {
-          await fs.promises.mkdir(audioDir, { recursive: true });
-          await fs.promises.copyFile(tempAudioPath, destPath);
-        } catch (e) {
-          this.logger.warn && this.logger.warn("保存錄音檔失敗:", e?.message || e);
-        } finally {
-          this.cleanupTempFile(tempAudioPath).catch(() => {});
-        }
-      })();
-      return destPath;
-    } catch (e) {
-      this.cleanupTempFile(tempAudioPath).catch(() => {});
-      return null;
-    }
-  }
-
-  // 保留策略（建議 1）：刪掉 audio/ 裡超過 retentionDays 天的錄音檔，避免無限增長。
-  // retentionDays <= 0 視為「永久保留」。被刪檔的歷史紀錄仍在,只是「重新辨識」會
-  // 提示檔案不存在(既有的優雅處理)。開機時呼叫一次。
-  async cleanupOldAudio(retentionDays) {
-    try {
-      const days = Number(retentionDays);
-      if (!days || days <= 0) return { removed: 0 };
-      const userDataPath = require("electron").app.getPath("userData");
-      const audioDir = path.join(userDataPath, "audio");
-      if (!fs.existsSync(audioDir)) return { removed: 0 };
-      const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-      const files = await fs.promises.readdir(audioDir);
-      let removed = 0;
-      for (const f of files) {
-        if (!f.toLowerCase().endsWith(".wav")) continue;
-        const fp = path.join(audioDir, f);
-        const st = await fs.promises.stat(fp).catch(() => null);
-        if (st && st.mtimeMs < cutoff) {
-          await fs.promises.unlink(fp).catch(() => {});
-          removed++;
-        }
-      }
-      if (removed && this.logger?.info) this.logger.info(`保留策略：清掉 ${removed} 個超過 ${days} 天的錄音檔`);
-      return { removed };
-    } catch (e) {
-      this.logger?.warn && this.logger.warn("清理舊錄音失敗:", e?.message || e);
-      return { removed: 0, error: e?.message };
-    }
-  }
-
-  async createTempAudioFile(audioBlob) {
-    const tempDir = os.tmpdir();
-    const filename = `sherpa_audio_${crypto.randomUUID()}.wav`;
-    const tempAudioPath = path.join(tempDir, filename);
-
-    this.logger.info && this.logger.info("創建臨時文件:", tempAudioPath);
-
-    let buffer;
-    if (audioBlob instanceof ArrayBuffer) {
-      buffer = Buffer.from(audioBlob);
-    } else if (audioBlob instanceof Uint8Array) {
-      buffer = Buffer.from(audioBlob);
-    } else if (typeof audioBlob === "string") {
-      buffer = Buffer.from(audioBlob, "base64");
-    } else if (audioBlob && audioBlob.buffer) {
-      buffer = Buffer.from(audioBlob.buffer);
-    } else {
-      throw new Error(`不支持的音頻數據類型: ${typeof audioBlob}`);
-    }
-
-    this.logger.debug && this.logger.debug("緩衝區創建，大小:", buffer.length);
-
-    await fs.promises.writeFile(tempAudioPath, buffer);
-
-    const stats = await fs.promises.stat(tempAudioPath);
-    this.logger.info &&
-      this.logger.info("臨時音頻文件創建:", {
-        path: tempAudioPath,
-        size: stats.size,
-        isFile: stats.isFile(),
-      });
-
-    if (stats.size === 0) {
-      throw new Error("音頻文件為空");
-    }
-
-    return tempAudioPath;
-  }
-
-  async cleanupTempFile(tempAudioPath) {
-    try {
-      await fs.promises.unlink(tempAudioPath);
-    } catch (cleanupError) {
-      // 臨時文件清理錯誤不是關鍵問題
-    }
-  }
+  _persistAudioInBackground(file) { return this.audioStore._persistAudioInBackground(file); }
+  cleanupOldAudio(days) { return this.audioStore.cleanupOldAudio(days); }
+  createTempAudioFile(data) { return this.audioStore.createTempAudioFile(data); }
+  cleanupTempFile(file) { return this.audioStore.cleanupTempFile(file); }
 
   // 直接用既有檔案路徑辨識（給「重新辨識」用，不建暫存、不重複保存）
   async transcribeFilePath(audioPath, options = {}) {
@@ -1225,7 +1122,7 @@ class SherpaManager {
       });
 
       this.activeStreamSession = null;
-      this.logger.info && this.logger.info("串流會話已結束:", result);
+      this.logger.info && this.logger.info("串流會話已結束", { code: "streaming_ended" });
 
       return result;
     } catch (error) {

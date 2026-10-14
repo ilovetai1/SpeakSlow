@@ -7,6 +7,8 @@ import { useAiOptimization } from "./hooks/useAiOptimization";
 import { usePermissions } from "./hooks/usePermissions";
 import PermissionCard from "./components/ui/permission-card";
 import HotkeySettings from "./components/HotkeySettings";
+import SpeechEngineSettings from './components/SpeechEngineSettings';
+import { useModelStatus } from './hooks/useModelStatus';
 import HotwordsManager from "./components/HotwordsManager";
 import DictionaryManager from "./components/DictionaryManager";
 import EmojiManager from "./components/EmojiManager";
@@ -43,6 +45,7 @@ const formatModelSize = (bytes) => {
 
 const SettingsPage = () => {
   const { t, language, setLanguage, languages } = useTranslation();
+  const speechStatus = useModelStatus();
   const [activeTab, setActiveTab] = useState('general');
   const aiOptimization = useAiOptimization();
   useEffect(() => {
@@ -719,6 +722,7 @@ const SettingsPage = () => {
             )}
 
             {activeTab === 'general' && (<>
+          <div className="mb-6"><SpeechEngineSettings /></div>
           {/* 一般设置部分 */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 mb-6">
             <div className="p-6">
@@ -899,6 +903,7 @@ const SettingsPage = () => {
                 </div>
 
                 {/* 自動列點：把「第一…第二…第三…」轉成 1. 2. 3.（預設關，誤觸率偏高） */}
+                <fieldset disabled={speechStatus.selected !== 'sherpa' || speechStatus.busy} className="disabled:opacity-50">
                 <div className="flex items-center justify-between">
                   <div>
                     <label className="text-sm font-medium text-gray-800 dark:text-gray-200">
@@ -925,8 +930,10 @@ const SettingsPage = () => {
                     />
                   </button>
                 </div>
+                </fieldset>
 
                 {/* 依停頓自動分行（issue #17）：講話頓一下思考不自動斷行，預設關 */}
+                <fieldset disabled={speechStatus.selected !== 'sherpa' || speechStatus.busy} className="disabled:opacity-50">
                 <div className="flex items-center justify-between">
                   <div>
                     <label className="text-sm font-medium text-gray-800 dark:text-gray-200">
@@ -953,6 +960,7 @@ const SettingsPage = () => {
                     />
                   </button>
                 </div>
+                </fieldset>
 
                 {/* 保存錄音檔 + 保留期限（建議 1：省 SSD、避免無限增長） */}
                 <div className="flex items-center justify-between">
@@ -1010,6 +1018,7 @@ const SettingsPage = () => {
                 )}
 
                 {/* 效能模式：標準（最準）/ 快速（弱 CPU 機器） */}
+                <fieldset disabled={speechStatus.selected !== 'sherpa' || speechStatus.busy} className="disabled:opacity-50">
                 <div className="flex items-center justify-between">
                   <div>
                     <label className="text-sm font-medium text-gray-800 dark:text-gray-200">
@@ -1035,6 +1044,7 @@ const SettingsPage = () => {
                     <option value="fast">{t('settings.asrProfileFast')}</option>
                   </select>
                 </div>
+                </fieldset>
 
                 {/* 转换识别结果 */}
                 <div className="flex items-center justify-between">
@@ -1093,6 +1103,7 @@ const SettingsPage = () => {
                 </div>
 
                 {/* 串流辨識模式開關 */}
+                <fieldset disabled={speechStatus.selected !== 'sherpa' || speechStatus.busy} className="disabled:opacity-50">
                 <div className="flex items-center justify-between">
                   <div>
                     <label htmlFor="streaming-toggle" className="text-sm font-medium text-gray-800 dark:text-gray-200">
@@ -1134,6 +1145,7 @@ const SettingsPage = () => {
                     />
                   </button>
                 </div>
+                </fieldset>
 
               </div>
             </div>
@@ -1443,7 +1455,7 @@ const SettingsPage = () => {
             {activeTab === 'hotwords' && (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 mb-6">
             <div className="p-6">
-              <HotwordsManager t={t} />
+              {speechStatus.selected === 'sherpa' ? <HotwordsManager t={t} /> : <p className="text-sm text-gray-500">Apple 引擎目前不提供原生熱詞提示。請用「字典」設定辨識後校正。</p>}
             </div>
           </div>
 

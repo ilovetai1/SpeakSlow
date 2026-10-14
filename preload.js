@@ -34,6 +34,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("recording-indicator-error", handler);
     return () => ipcRenderer.removeListener("recording-indicator-error", handler);
   },
+  getSpeechEngineState: () => ipcRenderer.invoke('speech-engine-state'),
+  selectSpeechEngine: (key, value) => ipcRenderer.invoke('speech-engine-select', key, value),
+  retrySpeechEngine: () => ipcRenderer.invoke('speech-engine-retry'),
+  installSpeechAssets: () => ipcRenderer.invoke('speech-engine-install'),
+  beginSpeechJob: (kind) => ipcRenderer.invoke('speech-job-begin', kind),
+  endSpeechJob: (id, cancel = false) => ipcRenderer.invoke('speech-job-end', id, cancel),
+  cancelSpeechJob: (id) => ipcRenderer.invoke('speech-job-cancel', id),
+  startSpeechSession: (id, format) => ipcRenderer.invoke('speech-session-start', id, format),
+  feedSpeechSession: (id, packet) => ipcRenderer.invoke('speech-session-feed', id, packet),
+  finishSpeechSession: (id, audio, options) => ipcRenderer.invoke('speech-session-finish', id, audio, options),
+  onSpeechEngineState: (callback) => { ipcRenderer.on('speech-engine-state', callback); return () => ipcRenderer.removeListener('speech-engine-state', callback); },
+  onSpeechPreview: (callback) => { ipcRenderer.on('speech-preview', callback); return () => ipcRenderer.removeListener('speech-preview', callback); },
+  onSpeechJobError: (callback) => { ipcRenderer.on('speech-job-error', callback); return () => ipcRenderer.removeListener('speech-job-error', callback); },
   startRecording: () => ipcRenderer.invoke("start-recording"),
   stopRecording: () => ipcRenderer.invoke("stop-recording"),
   onToggleDictation: (callback) => {
@@ -47,14 +60,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   restartSherpaServer: () => ipcRenderer.invoke("restart-sherpa-server"),
 
   // 邊錄邊算（precog）：錄音中先解碼已講完的段落，停止時只剩尾段
-  precogStart: (profile) => ipcRenderer.invoke("precog-start", profile),
-  precogFeed: (audioB64) => ipcRenderer.invoke("precog-feed", audioB64),
-  precogAbort: () => ipcRenderer.invoke("precog-abort"),
+  precogStart: (profile, jobId) => ipcRenderer.invoke("precog-start", profile, jobId),
+  precogFeed: (audioB64, jobId) => ipcRenderer.invoke("precog-feed", audioB64, jobId),
+  precogAbort: (jobId) => ipcRenderer.invoke("precog-abort", jobId),
 
   // 串流辨識 API (Zipformer Transducer)
   streamingStart: (options) => ipcRenderer.invoke("streaming-start", options),
-  streamingFeed: (audioChunk, isFinal) => ipcRenderer.invoke("streaming-feed", audioChunk, isFinal),
-  streamingEnd: () => ipcRenderer.invoke("streaming-end"),
+  streamingFeed: (audioChunk, isFinal, jobId) => ipcRenderer.invoke("streaming-feed", audioChunk, isFinal, jobId),
+  streamingEnd: (jobId) => ipcRenderer.invoke("streaming-end", jobId),
   preloadStreamingModel: () => ipcRenderer.invoke("preload-streaming-model"),
   checkStreamingModelFiles: () => ipcRenderer.invoke("check-streaming-model-files"),
   downloadStreamingModel: () => ipcRenderer.invoke("download-streaming-model"),

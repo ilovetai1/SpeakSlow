@@ -5,6 +5,7 @@ export async function finalizeTranscript({
   processText,
   saveTranscription,
   transcriptionData,
+  isCancelled = () => false,
 }) {
   let finalText = rawText;
   let polished = false;
@@ -38,6 +39,7 @@ export async function finalizeTranscript({
     }
   }
 
+  if (isCancelled()) return { cancelled: true, finalText: null, saved: false };
   const finalData = {
     ...transcriptionData,
     raw_text: rawText,

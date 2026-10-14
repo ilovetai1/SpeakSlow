@@ -31,7 +31,7 @@ async function speakText(ctx, text, label) {
     }
   } catch (e) { /* 用預設 */ }
   try {
-    const res = await ctx.sherpaManager.tts(text, voice, rate);
+    const res = await ctx.textUtilities.tts(text, voice, rate);
     if (res && res.success && res.audio_b64) {
       const win = ctx.windowManager && ctx.windowManager.mainWindow;
       if (win && !win.isDestroyed()) win.webContents.send("tts-play", res.audio_b64);
@@ -289,7 +289,7 @@ async function aiToTraditional(ctx, producer) {
   const res = await producer();
   if (res && res.success && typeof res.text === "string" && res.text.trim()) {
     try {
-      const conv = await ctx.sherpaManager.transformText(res.text, "to_traditional");
+      const conv = await ctx.textUtilities.transformText(res.text, "to_traditional");
       if (conv && conv.success && typeof conv.text === "string" && conv.text.trim()) {
         return { ...res, text: conv.text };
       }
@@ -333,7 +333,7 @@ async function runSingleCommand(ctx, text) {
 
   if (cmd.kind === "transform") {
     return await applyToSelection(ctx, cmd.label, (sel) =>
-      ctx.sherpaManager.transformText(sel, cmd.mode)
+      ctx.textUtilities.transformText(sel, cmd.mode)
     );
   }
 

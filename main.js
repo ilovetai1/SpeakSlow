@@ -151,6 +151,9 @@ const typelessManager = new TypelessManager(logger);
 const dataDirectory = environmentManager.ensureDataDirectory();
 databaseManager.initialize(dataDirectory);
 if (acceptance) {
+  databaseManager.setSetting('asr_engine', 'sherpa');
+  databaseManager.setSetting('apple_response_profile', 'accurate');
+  databaseManager.setSetting('asr_profile', 'standard');
   // Settings only in the explicit isolated directory; normal startup is unchanged.
   for (const [key, value] of Object.entries({ enable_ai_optimization: false, context_aware_polishing_enabled: false, local_correction_learning_enabled: false, paste_after_transcription: true, auto_enter_after_paste: false, save_audio: false, enable_streaming_mode: false, typeless_enabled: true })) databaseManager.setSetting(key, value);
 }
@@ -217,16 +220,15 @@ async function startApp() {
     Menu.setApplicationMenu(null);
   }
 
-  // 在启动时初始化 Sherpa 管理器（不等待以避免阻塞）
-  logger.info('开始初始化 Sherpa 管理器...');
-  sherpaManager.initializeAtStartup().catch((err) => {
-    logger.warn("Sherpa 在启动时不可用，这不是关键问题", err);
+  // Only the persisted engine may prepare its recognizer.
+  ipcHandlers.speechEngineManager.initialize().catch(() => {
+    logger.warn('語音引擎準備失敗', { code: 'speech_prepare_failed' });
   });
 
   // 保留策略（建議 1）：開機清掉超過保留天數的舊錄音，避免無限增長 + 減少 SSD 寫入。
   try {
     const retentionDays = databaseManager.getSetting('audio_retention_days', 30);
-    sherpaManager.cleanupOldAudio(retentionDays).catch(() => {});
+    ipcHandlers.audioStore.cleanupOldAudio(retentionDays).catch(() => {});
   } catch (e) { /* 不擋啟動 */ }
 
   // 创建主窗口
@@ -315,11 +317,19 @@ app.on("activate", () => {
   }
 });
 
-app.on("before-quit", () => {
+let shutdownStarted = false, shutdownFinished = false;
+app.on("before-quit", (event) => {
   // 從 dock 右鍵「結束」或 Cmd+Q 退出時，標記為「真正退出」，否則 close handler 會把它
   // 當成一般關閉 → preventDefault + hide → Mac 上「關不掉、結束沒反應」（issue #16）。
   windowManager.isQuitting = true;
-  ipcHandlers?.shutdown();
+  if (shutdownFinished || !ipcHandlers) return;
+  event.preventDefault();
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  ipcHandlers.shutdown().catch(() => logger.warn('語音引擎結束失敗', { code: 'speech_shutdown_failed' })).finally(() => {
+    shutdownFinished = true;
+    app.quit();
+  });
 });
 
 app.on("will-quit", () => {

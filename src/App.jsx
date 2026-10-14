@@ -556,7 +556,8 @@ export default function App() {
     startRecording: startRecordingNormal,
     stopRecording: stopRecordingNormal,
     cancelRecording: cancelRecordingNormal,
-    error: recordingErrorNormal
+    error: recordingErrorNormal,
+    previewText: applePreviewText
   } = useRecording(modelStatus); // 共用 App 的 modelStatus 實例（避免雙重輪詢）
 
   // 串流錄音模式
@@ -573,7 +574,8 @@ export default function App() {
   } = useStreamingRecording();
 
   // 串流模式設定
-  const [streamingMode, setStreamingMode] = useState(false);
+  const [streamingPreference, setStreamingMode] = useState(false);
+  const streamingMode = streamingPreference && modelStatus.selected === 'sherpa';
 
   // TypeLess 模式（按住錄音）
   const [typelessMode, setTypelessMode] = useState(false);
@@ -1638,6 +1640,10 @@ export default function App() {
             <ProcessingProgressBar />
           )}
 
+          {applePreviewText && <div className="mt-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg max-h-32 overflow-y-auto" role="status">
+            <p className="text-xs text-gray-500">辨識預覽（可能修訂）</p>
+            <p className="text-sm whitespace-pre-wrap">{applePreviewText}</p>
+          </div>}
           {/* 串流辨識即時文字顯示 */}
           {streamingMode && isRecording && (partialText || fullText) && (
             <div className="mt-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg max-h-32 overflow-y-auto">

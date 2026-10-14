@@ -8,7 +8,10 @@ export const usePermissions = (showAlertDialog) => {
 
   const requestMicPermission = useCallback(async () => {
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // This request only checks permission. It must not keep a second capture
+      // alive after the recording hook releases its own microphone stream.
+      stream.getTracks().forEach((track) => track.stop());
       setMicPermissionGranted(true);
       if (showAlertDialog) {
         showAlertDialog({

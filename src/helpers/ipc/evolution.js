@@ -18,7 +18,12 @@ module.exports = function register(ctx) {
     return { ...result, scopeHandle: handle, bundleId };
   });
   ipcMain.on('latency-unavailable', () => { ctx.latencyManager.status = 'metrics_unavailable'; });
-  ipcMain.handle('latency-start', (_event, mode) => ctx.latencyManager.start(mode));
+  ipcMain.handle('latency-start', (_event, mode) => {
+    const id = ctx.latencyManager.start(mode);
+    const job = ctx.speechEngineManager.job;
+    ctx.latencyManager.classifyASR(id, job?.engine || ctx.speechEngineManager.selected, job?.profile || 'unknown');
+    return id;
+  });
   ipcMain.on('latency-record', (_event, id, stage, outcome, duration) => {
     try { ctx.latencyManager.record(id, stage, outcome, duration); }
     catch { ctx.logger.warn('延遲觀測格式無效', { code: 'metrics_invalid' }); }

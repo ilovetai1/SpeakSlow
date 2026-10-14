@@ -17,6 +17,8 @@ function play(file) {
 }
 async function runAcceptance({ app, acceptance, windowManager, databaseManager: db, sherpaManager, hotkeyManager, clipboardManager, ipcHandlers: ipc }) {
   const plan = JSON.parse(fs.readFileSync(acceptance.planPath, 'utf8'));
+  if (plan.kind === 'speech-capture') return require('./speechCaptureAcceptance').runCaptureAcceptance({ app, acceptance, windowManager, databaseManager: db, sherpaManager, hotkeyManager, clipboardManager, ipcHandlers: ipc });
+  if (plan.kind === 'speech-engine') return require('./speechAcceptanceRunner').runSpeechAcceptance({ app, acceptance, windowManager, databaseManager: db, sherpaManager, hotkeyManager, clipboardManager, ipcHandlers: ipc }, plan);
   if (!['com.apple.TextEdit', 'com.google.Chrome'].includes(plan.targetBundle) || !Number.isInteger(plan.pairs) || plan.pairs < 1 || plan.pairs > 50 || !path.isAbsolute(plan.audioFile) || !fs.existsSync(plan.audioFile) || !Array.isArray(plan.requiredWords) || plan.requiredWords.some(x => typeof x !== 'string' || x.length > 40) || typeof plan.fixtureMarker !== 'string' || plan.fixtureMarker.length > 40) throw new Error('acceptance_plan_invalid');
   const output = path.join(acceptance.dataDirectory, 'physical-pairs.json');
   const result = { version: 1, scope: 'real default microphone, existing hotkey IPC, ASR, isolated SQLite, real paste command and bounded read-back; no fake device or ASR', pairs: [], excluded: [], status: 'waiting' };

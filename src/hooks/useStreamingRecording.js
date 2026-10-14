@@ -2,6 +2,7 @@ import { beginLatency } from '../utils/latencyRecorder.mjs';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useModelStatus } from './useModelStatus';
 import { convertText, useTranslation } from '../i18n';
+import { speechError } from '../utils/speechEngineMessages.mjs';
 
 /**
  * 串流錄音功能 Hook
@@ -19,6 +20,8 @@ export const useStreamingRecording = () => {
   const [fullText, setFullText] = useState('');
 
   const metricRef = useRef(null);
+  const jobRef = useRef(null);
+  const startingRef = useRef(false);
   const mediaRecorderRef = useRef(null);
   const streamRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -99,7 +102,10 @@ export const useStreamingRecording = () => {
 
   // 開始串流錄音
   const startStreaming = useCallback(async () => {
+    if (startingRef.current || jobRef.current) return false;
+    startingRef.current = true;
     try {
+      jobRef.current = await window.electronAPI.beginSpeechJob('streaming');
       metricRef.current = await beginLatency('streaming');
       setError(null);
       setPartialText('');
@@ -201,7 +207,7 @@ export const useStreamingRecording = () => {
 
       // 開始串流辨識會話
       if (window.electronAPI) {
-        const startResult = await window.electronAPI.streamingStart();
+        const startResult = await window.electronAPI.streamingStart({ jobId: jobRef.current?.id });
         if (!startResult.success) {
           throw new Error(startResult.error || t('errors.cannotStartStreamingSession'));
         }
@@ -241,7 +247,8 @@ export const useStreamingRecording = () => {
             // 如果偵測到停頓，發送 is_final=true 來觸發分段
             const result = await window.electronAPI.streamingFeed(
               base64,
-              isSilencePause  // 停頓時標記為 final，觸發分段處理
+              isSilencePause,
+              jobRef.current?.id // Session identity prevents late audio entering a newer job.
             );
 
             if (result.success) {
@@ -260,7 +267,7 @@ export const useStreamingRecording = () => {
                   lastVoiceTimeRef.current = null;
 
                   // 重新開始串流會話
-                  await window.electronAPI.streamingStart();
+                  await window.electronAPI.streamingStart({ jobId: jobRef.current?.id });
                 } else {
                   setFullText(segmentTextRef.current + result.full_text);
                 }
@@ -273,18 +280,23 @@ export const useStreamingRecording = () => {
       }, 250);  // 平衡模式：250ms 間隔
 
     } catch (err) {
+      const job = jobRef.current; jobRef.current = null;
+      if (job) await window.electronAPI.endSpeechJob(job.id, true).catch(() => {});
       metricRef.current?.finish('failed');
       setError(t('errors.cannotStartStreaming', { error: err.message }));
       setIsRecording(false);
       setIsInitializing(false);
       cleanup();
-    }
+      return false;
+    } finally { startingRef.current = false; }
+    return true;
   }, [modelStatus.isReady, modelStatus.isLoading, cleanup, t]);
 
   // 停止串流錄音
   const stopStreaming = useCallback(async () => {
     if (!streamingActiveRef.current) return;
 
+    const stoppedJob = jobRef.current;
     metricRef.current?.stop();
     streamingActiveRef.current = false;
     setIsProcessing(true);
@@ -306,14 +318,16 @@ export const useStreamingRecording = () => {
         const base64 = btoa(String.fromCharCode(...uint8Array));
         await window.electronAPI.streamingFeed(
           base64,
-          true
+          true,
+          jobRef.current?.id
         );
       }
 
       // 結束串流會話並獲取最終結果
       if (window.electronAPI) {
-        const endResult = metricRef.current ? await metricRef.current.measure('asr', () => window.electronAPI.streamingEnd()) : await window.electronAPI.streamingEnd();
+        const endResult = metricRef.current ? await metricRef.current.measure('asr', () => window.electronAPI.streamingEnd(jobRef.current?.id)) : await window.electronAPI.streamingEnd(jobRef.current?.id);
 
+        if (jobRef.current?.id !== stoppedJob?.id) return;
         if (endResult.success && endResult.final_text) {
           let finalText = endResult.final_text;
 
@@ -329,7 +343,7 @@ export const useStreamingRecording = () => {
 
           // 觸發完成回調
           if (window.onTranscriptionComplete) {
-            window.onTranscriptionComplete({
+            await window.onTranscriptionComplete({
               success: true,
               text: finalText,
               streaming: true
@@ -355,6 +369,8 @@ export const useStreamingRecording = () => {
       metricRef.current?.finish('failed');
       setError(t('errors.stopStreamingFailed', { error: err.message }));
     } finally {
+      if (jobRef.current?.id === stoppedJob?.id) jobRef.current = null;
+      if (stoppedJob) await window.electronAPI.endSpeechJob(stoppedJob.id).catch(() => {});
       cleanup();
       setIsRecording(false);
       setIsProcessing(false);
@@ -364,6 +380,8 @@ export const useStreamingRecording = () => {
   // 取消串流錄音
   const cancelStreaming = useCallback(() => {
     metricRef.current?.finish('cancelled');
+    const job = jobRef.current; jobRef.current = null;
+    if (job) window.electronAPI.endSpeechJob(job.id, true).catch(() => {});
     streamingActiveRef.current = false;
     cleanup();
     setIsRecording(false);
@@ -373,10 +391,17 @@ export const useStreamingRecording = () => {
     setError(null);
   }, [cleanup]);
 
+  useEffect(() => window.electronAPI?.onSpeechJobError?.((_event, data) => {
+    if (jobRef.current?.id !== data.jobId) return;
+    cancelStreaming(); setError(speechError(data.error));
+  }), [cancelStreaming]);
+
   // 組件卸載時清理
   useEffect(() => {
     return () => {
       metricRef.current?.finish('cancelled');
+      const job = jobRef.current; jobRef.current = null;
+      if (job) window.electronAPI?.endSpeechJob?.(job.id, true).catch(() => {});
       cleanup();
     };
   }, [cleanup]);

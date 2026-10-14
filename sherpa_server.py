@@ -1130,7 +1130,7 @@ class SherpaServer:
             result = self.streaming_recognizer.get_result(stream)
 
             # Debug: 看 result 的類型和內容
-            logger.debug(f"[串流] decode_count={decode_count}, result type={type(result)}, result={repr(result)[:200]}")
+            logger.debug("stream_decode_count=%d", decode_count)
 
             # 處理結果 - result 可能是字串或物件
             if isinstance(result, str):
@@ -1142,7 +1142,7 @@ class SherpaServer:
 
             # Debug log 僅在有文字時記錄
             if partial_text:
-                logger.info(f"[串流] 即時結果: {partial_text}")
+                logger.info("recognition_result_updated")
 
             # 檢查是否檢測到端點（句子結束）
             is_endpoint = self.streaming_recognizer.is_endpoint(stream)
@@ -1200,7 +1200,7 @@ class SherpaServer:
             final_result = self.streaming_recognizer.get_result(stream)
             remaining_text = final_result.strip() if final_result else ""
 
-            logger.info(f"[stream_end] text_buffer='{session['text_buffer'][:50] if session['text_buffer'] else '(空)'}', remaining='{remaining_text[:50] if remaining_text else '(空)'}'")
+            logger.info("recognition_result_updated")
 
             # 組合最終文字
             if session["text_buffer"]:
@@ -1221,7 +1221,7 @@ class SherpaServer:
                 text_with_punc = session.get("last_partial_text", "").strip()
                 if text_with_punc:
                     # 從繁體轉回簡體再加標點（last_partial_text 已經是繁體）
-                    logger.info(f"[stream_end] 使用 last_partial_text 作為最終結果: {text_with_punc[:30]}")
+                    logger.info("recognition_result_updated")
 
             # 強制確保有句末標點（方案 A：提升標點覆蓋率）
             if text_with_punc and not text_with_punc.endswith(('。', '？', '！', '，', '；', '：')):
@@ -1230,7 +1230,7 @@ class SherpaServer:
                 # 如果還是沒有，強制加句號
                 if not text_with_punc.endswith(('。', '？', '！', '，', '；', '：')):
                     text_with_punc += '。'
-                logger.info(f"[stream_end] 強制加句末標點: {text_with_punc[-10:]}")
+                logger.info("recognition_result_updated")
 
             # 保存原始文字（用於 debug）
             raw_text = text_with_punc
@@ -1242,7 +1242,7 @@ class SherpaServer:
             # 清理會話
             del self.streaming_sessions[session_id]
 
-            logger.info(f"串流會話結束: {session_id}, 結果: {text_with_punc[:50] if text_with_punc else '(空)'}...")
+            logger.info("recognition_result_updated")
 
             return {
                 "success": True,
@@ -1285,7 +1285,7 @@ class SherpaServer:
     def transcribe_audio(self, audio_path, options=None):
         """轉錄音頻文件"""
         if not self.initialized:
-            init_result = self.initialize()
+            init_result = {"success": True, "utility_only": True} if getattr(self, "utility_only", False) else self.initialize()
             if not init_result["success"]:
                 return init_result
 
@@ -1317,7 +1317,7 @@ class SherpaServer:
                 except Exception as e:
                     logger.warning(f"快速模型不可用，改用標準模型: {e}")
 
-            logger.info(f"開始轉錄音頻文件: {audio_path}")
+            logger.info("開始轉錄音訊")
             start_time = time.time()
 
             # 讀取音頻
@@ -1519,7 +1519,7 @@ class SherpaServer:
                 f"後處理={_total_ms - locals().get('_decode_ms', _total_ms):.0f}ms "
                 f"total={_total_ms:.0f}ms 音訊={duration:.1f}s"
             )
-            logger.info(f"轉錄完成: {text_with_punc[:100]}... (RTF: {rtf:.3f})")
+            logger.info("recognition_result_updated")
 
             return {
                 "success": True,
@@ -1774,7 +1774,7 @@ class SherpaServer:
         logger.info("Sherpa-ONNX 服務器啟動")
 
         # 初始化
-        init_result = self.initialize()
+        init_result = {"success": True, "utility_only": True} if getattr(self, "utility_only", False) else self.initialize()
         print(json.dumps(init_result, ensure_ascii=False))
         sys.stdout.flush()
 
@@ -1799,7 +1799,9 @@ class SherpaServer:
                 # 處理命令
                 action = command.get("action")
 
-                if action == "transcribe":
+                if getattr(self, "utility_only", False) and action not in ("tts", "text_transform", "get_emoji_map", "set_custom_emojis", "exit"):
+                    result = {"success": False, "error": "utility_only"}
+                elif action == "transcribe":
                     audio_path = command.get("audio_path")
                     options = command.get("options", {})
                     result = self.transcribe_audio(audio_path, options)
@@ -1923,7 +1925,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-dir", type=str, default=None,
                         help="sherpa-onnx 模型目錄")
+    parser.add_argument("--utility-only", action="store_true", help="文字與TTS功能，不建立辨識模型")
     args = parser.parse_args()
 
     server = SherpaServer(model_dir=args.model_dir)
+    server.utility_only = args.utility_only
     server.run()

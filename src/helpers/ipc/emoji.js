@@ -17,7 +17,7 @@ module.exports = function register(ctx) {
   // 內建符號對照表（給設定頁顯示，唯讀）
   ipcMain.handle("get-builtin-emojis", async () => {
     try {
-      const res = await ctx.sherpaManager.getEmojiMap();
+      const res = ctx.textUtilities.getEmojiMap();
       return { success: true, builtin: (res && res.builtin) || {} };
     } catch (e) {
       return { success: false, error: e.message, builtin: {} };
@@ -45,7 +45,7 @@ module.exports = function register(ctx) {
       }
       ctx.databaseManager.setSetting("custom_emojis", clean);
       ctx.sherpaManager.customEmojis = clean; // 後端若重啟也能補回
-      await ctx.sherpaManager.setCustomEmojis(clean);
+      if (ctx.sherpaManager.serverReady) await ctx.sherpaManager.setCustomEmojis(clean);
       return { success: true, emojis: clean };
     } catch (e) {
       return { success: false, error: e.message };

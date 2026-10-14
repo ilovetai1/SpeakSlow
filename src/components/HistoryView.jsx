@@ -1,4 +1,5 @@
 import React from "react";
+import { useModelStatus } from '../hooks/useModelStatus';
 import { useTranslation } from "../i18n";
 import { getLevelIndex, LEVELS } from "../utils/levels";
 import { historyTextContract } from "../utils/historyPolishing.mjs";
@@ -168,6 +169,7 @@ const DailyChart = ({ data }) => {
  * 歷史紀錄內容（自帶翻譯與複製），可嵌入任何容器（設定分頁、獨立視窗）。
  */
 export const HistoryView = () => {
+  const speechStatus = useModelStatus();
   const { t } = useTranslation();
   const [transcriptions, setTranscriptions] = React.useState([]);
   const [loading, setLoading] = React.useState(false);
@@ -350,7 +352,7 @@ export const HistoryView = () => {
           } : it))
         );
         const same = (res.text || '').trim() === prevText.trim();
-        const prefix = model === 'whisper' ? 'Whisper ' : '';
+        const prefix = res.asrEngine === 'apple' ? 'Apple ' : model === 'whisper' ? 'Whisper ' : 'Sherpa ';
         const tip = document.createElement('div');
         tip.textContent = prefix + (same ? t('history.retranscribe.doneSame') : t('history.retranscribe.doneUpdated'));
         tip.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#10b981;color:#fff;padding:8px 16px;border-radius:9999px;font-size:13px;z-index:9999';
@@ -503,7 +505,7 @@ export const HistoryView = () => {
                           onClick={() => handleRetranscribe(item.id, 'paraformer')}
                           disabled={retranscribingId === item.id}
                           className="p-2 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors disabled:opacity-50"
-                          title={t('history.retranscribe.fast')}
+                          title={`使用目前引擎重新辨識：${speechStatus.selected === 'apple' ? 'Apple' : 'Sherpa'}`} aria-label="使用目前引擎重新辨識"
                         >
                           <svg
                             className={`w-4 h-4 text-blue-500 dark:text-blue-400 ${retranscribingId === item.id && retranscribingModel === 'paraformer' ? 'animate-spin' : ''}`}
@@ -514,7 +516,7 @@ export const HistoryView = () => {
                         </button>
                         <button
                           onClick={() => handleRetranscribe(item.id, 'whisper')}
-                          disabled={retranscribingId === item.id}
+                          disabled={retranscribingId === item.id || speechStatus.selected !== 'sherpa' || speechStatus.busy}
                           className="p-2 hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded-lg transition-colors disabled:opacity-50"
                           title={t('history.retranscribe.accurate')}
                         >

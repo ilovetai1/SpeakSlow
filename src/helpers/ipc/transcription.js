@@ -3,6 +3,16 @@ const { runVoiceCommand } = require("../commandMode");
 const recovery = require("../recovery");
 
 module.exports = function register(ctx) {
+  const withOwner = async (event, start) => {
+    const operation = start();
+    const job = ctx.speechEngineManager.job;
+    if (!job || job.owner !== event.sender.id) return operation;
+    const cancel = () => ctx.speechEngineManager.end(job.id, event.sender.id, true).catch(() => {});
+    event.sender.once('destroyed', cancel);
+    event.sender.once('render-process-gone', cancel);
+    try { return await operation; }
+    finally { event.sender.removeListener('destroyed', cancel); event.sender.removeListener('render-process-gone', cancel); }
+  };
   // 打開「記下來」的筆記檔（用系統預設程式）
   ipcMain.handle("open-notes", async () => {
     try {
@@ -48,9 +58,9 @@ module.exports = function register(ctx) {
         .map((x) => x.trim())
         .slice(0, 6);
       // 本地 qwen 常吐簡體 → 統一轉繁體（與操作模式 AI 一致；text_transform 是純 opencc）
-      if (arr.length && ctx.sherpaManager?.transformText) {
+      if (arr.length && ctx.textUtilities?.transformText) {
         try {
-          const conv = await ctx.sherpaManager.transformText(arr.join("\n"), "to_traditional");
+          const conv = await ctx.textUtilities.transformText(arr.join("\n"), "to_traditional");
           if (conv && conv.success && typeof conv.text === "string") {
             const lines = conv.text.split("\n").map((s) => s.trim()).filter(Boolean);
             if (lines.length === arr.length) arr = lines;
@@ -85,6 +95,7 @@ module.exports = function register(ctx) {
 
   // Sherpa ASR 相关
   ipcMain.handle("check-sherpa-status", async () => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     console.log("[IPC] check-sherpa-status 被調用, serverReady:", ctx.sherpaManager.serverReady);
     const status = await ctx.sherpaManager.checkStatus();
     console.log("[IPC] check-sherpa-status 返回:", JSON.stringify(status));
@@ -95,11 +106,13 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("sherpa-status", async () => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     return await ctx.sherpaManager.checkStatus();
   });
 
   // 模型文件管理
   ipcMain.handle("check-model-files", async () => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     console.log("[IPC] check-model-files 被調用");
     const result = await ctx.sherpaManager.checkModelFiles();
     // 同時返回服務器狀態，避免前端需要額外調用
@@ -112,10 +125,12 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("get-download-progress", async () => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     return await ctx.sherpaManager.getDownloadProgress();
   });
 
   ipcMain.handle("download-models", async (event) => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     return await ctx.sherpaManager.downloadModels((progress) => {
       event.sender.send("model-download-progress", progress);
     });
@@ -126,11 +141,13 @@ module.exports = function register(ctx) {
     // 錄音的持久化由 sherpaManager.transcribeAudio 負責（persistAudioFile，
     // 回傳 audio_path）。這裡不再另存一份 — 之前重複存檔導致每段錄音
     // 落地兩份 WAV，且此處覆蓋 audio_path 讓另一份變成孤兒檔。
-    return await ctx.sherpaManager.transcribeAudio(audioData, options);
+    return withOwner(event, () => ctx.speechEngineManager.transcribe(audioData, options, event.sender.id));
   });
 
   // 邊錄邊算（precog）：錄音中把已閉合語音段先解碼，停止時只剩尾段
-  ipcMain.handle("precog-start", async (event, profile) => {
+  ipcMain.handle("precog-start", async (event, profile, jobId) => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
+    if (!ctx.speechEngineManager.job || ctx.speechEngineManager.job.owner !== event.sender.id || ctx.speechEngineManager.job.kind !== "recording" || ctx.speechEngineManager.job.id !== jobId) return { success: false, error: "speech_job_invalid" };
     try {
       return await ctx.sherpaManager.precogStart(profile);
     } catch (error) {
@@ -138,7 +155,9 @@ module.exports = function register(ctx) {
     }
   });
 
-  ipcMain.handle("precog-feed", async (event, audioB64) => {
+  ipcMain.handle("precog-feed", async (event, audioB64, jobId) => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
+    if (!ctx.speechEngineManager.job || ctx.speechEngineManager.job.owner !== event.sender.id || ctx.speechEngineManager.job.kind !== "recording" || ctx.speechEngineManager.job.id !== jobId) return { success: false, error: "speech_job_invalid" };
     try {
       return await ctx.sherpaManager.precogFeed(audioB64);
     } catch (error) {
@@ -146,7 +165,9 @@ module.exports = function register(ctx) {
     }
   });
 
-  ipcMain.handle("precog-abort", async () => {
+  ipcMain.handle("precog-abort", async (event, jobId) => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
+    if (!ctx.speechEngineManager.job || ctx.speechEngineManager.job.owner !== event.sender.id || ctx.speechEngineManager.job.kind !== "recording" || ctx.speechEngineManager.job.id !== jobId) return { success: false, error: "speech_job_invalid" };
     try {
       return await ctx.sherpaManager.precogAbort();
     } catch (error) {
@@ -156,6 +177,8 @@ module.exports = function register(ctx) {
 
   // 串流辨識 API (Zipformer Transducer)
   ipcMain.handle("streaming-start", async (event, options = {}) => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
+    if (!ctx.speechEngineManager.job || ctx.speechEngineManager.job.owner !== event.sender.id || ctx.speechEngineManager.job.kind !== "streaming" || ctx.speechEngineManager.job.id !== options.jobId) return { success: false, error: "speech_job_invalid" };
     try {
       return await ctx.sherpaManager.streamingStart(options);
     } catch (error) {
@@ -164,7 +187,9 @@ module.exports = function register(ctx) {
     }
   });
 
-  ipcMain.handle("streaming-feed", async (event, audioChunk, isFinal = false) => {
+  ipcMain.handle("streaming-feed", async (event, audioChunk, isFinal = false, jobId) => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
+    if (!ctx.speechEngineManager.job || ctx.speechEngineManager.job.owner !== event.sender.id || ctx.speechEngineManager.job.kind !== "streaming" || ctx.speechEngineManager.job.id !== jobId) return { success: false, error: "speech_job_invalid" };
     try {
       return await ctx.sherpaManager.streamingFeed(audioChunk, isFinal);
     } catch (error) {
@@ -173,7 +198,9 @@ module.exports = function register(ctx) {
     }
   });
 
-  ipcMain.handle("streaming-end", async () => {
+  ipcMain.handle("streaming-end", async (event, jobId) => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
+    if (!ctx.speechEngineManager.job || ctx.speechEngineManager.job.owner !== event.sender.id || ctx.speechEngineManager.job.kind !== "streaming" || ctx.speechEngineManager.job.id !== jobId) return { success: false, error: "speech_job_invalid" };
     try {
       return await ctx.sherpaManager.streamingEnd();
     } catch (error) {
@@ -183,6 +210,7 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("preload-streaming-model", async () => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     try {
       return await ctx.sherpaManager.preloadStreamingModel();
     } catch (error) {
@@ -192,6 +220,7 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("check-streaming-model-files", async () => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     try {
       return await ctx.sherpaManager.checkStreamingModelFiles();
     } catch (error) {
@@ -201,6 +230,7 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("download-streaming-model", async (event) => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     try {
       return await ctx.sherpaManager.downloadStreamingModel((progress) => {
         event.sender.send("streaming-model-download-progress", progress);
@@ -223,12 +253,11 @@ module.exports = function register(ctx) {
       if (!fs.existsSync(record.audio_path)) {
         return { success: false, error: "錄音檔已不存在" };
       }
-      const result = await ctx.sherpaManager.transcribeFilePath(record.audio_path, options);
+      const result = await withOwner(event, () => ctx.speechEngineManager.transcribeFilePath(record.audio_path, options, event.sender.id, result => ctx.databaseManager.replaceTranscriptionBaseline(id, result.text)));
       if (!result || !result.success) {
         return { success: false, error: result?.error || "辨識失敗" };
       }
-      ctx.databaseManager.replaceTranscriptionBaseline(id, result.text);
-      return { success: true, text: result.text };
+      return { success: true, text: result.text, asrEngine: result.asrEngine };
     } catch (e) {
       return { success: false, error: e.message };
     }
@@ -261,6 +290,7 @@ module.exports = function register(ctx) {
 
   // ===== 熱詞功能 =====
   ipcMain.handle("get-hotwords", async () => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     try {
       return await ctx.sherpaManager.getHotwords();
     } catch (error) {
@@ -270,6 +300,7 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("set-hotwords", async (event, config) => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     try {
       // config: { enabled: boolean, score: number, words: string[] }
       return await ctx.sherpaManager.setHotwords(config);
@@ -280,6 +311,7 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("add-hotword", async (event, word) => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     try {
       return await ctx.sherpaManager.addHotword(word);
     } catch (error) {
@@ -289,6 +321,7 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("remove-hotword", async (event, word) => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     try {
       return await ctx.sherpaManager.removeHotword(word);
     } catch (error) {
@@ -299,6 +332,7 @@ module.exports = function register(ctx) {
 
   // 模型管理 - 更新为实际功能
   ipcMain.handle("download-model", async (event, modelName) => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     // 使用统一的模型下载功能
     return await ctx.sherpaManager.downloadModels((progress) => {
       event.sender.send("model-download-progress", progress);
@@ -321,6 +355,7 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("get-current-model", async () => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     const status = await ctx.sherpaManager.checkStatus();
     return {
       model: "sherpa-onnx-paraformer-zh",
@@ -338,6 +373,7 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("test-sherpa-environment", async () => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     try {
       ctx.logger && ctx.logger.info && ctx.logger.info('开始测试Sherpa环境');
 
@@ -366,11 +402,13 @@ module.exports = function register(ctx) {
   });
 
   ipcMain.handle("restart-sherpa-server", async () => {
+    if (ctx.speechEngineManager.selected !== "sherpa") return { success: false, error: "engine_not_selected" };
     try {
       ctx.logger && ctx.logger.info && ctx.logger.info('手动重启Sherpa服务器');
 
       // 使用新的restartServer方法
-      const result = await ctx.sherpaManager.restartServer();
+      const state = await ctx.speechEngineManager.retry();
+      const result = { success: state.state === "ready", ...state };
 
       return result;
     } catch (error) {

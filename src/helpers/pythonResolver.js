@@ -8,8 +8,9 @@ const path = require("path");
 const { spawn } = require("child_process");
 
 class PythonResolver {
-  constructor(logger = console) {
+  constructor(logger = console, { userDataPath } = {}) {
     this.logger = logger;
+    this.userDataPath = userDataPath;
     this.pythonCmd = null;
     this._cachedPythonEnv = null;
     this._lastEmbeddedCheck = null;
@@ -97,7 +98,7 @@ class PythonResolver {
       PYTHONDONTWRITEBYTECODE: "1",
       PYTHONIOENCODING: "utf-8",
       PYTHONUNBUFFERED: "1",
-      ELECTRON_USER_DATA: require("electron").app.getPath("userData"),
+      ELECTRON_USER_DATA: this.userDataPath || require("electron").app.getPath("userData"),
     };
 
     if (isUsingEmbedded) {

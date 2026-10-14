@@ -9,9 +9,9 @@
     "dev": "concurrently -k -r \"npm:dev:renderer\" \"npm:dev:main\"",
     "dev:main": "cross-env NODE_ENV=development electronmon .",
     "dev:renderer": "cd src && vite",
-    "build": "npm run build:renderer && electron-builder",
+    "build": "npm run build:backend && npm run build:renderer && electron-builder",
     "postinstall": "electron-builder install-app-deps",
-    "build:renderer": "node scripts/build-context-helper.mjs && cd src && vite build",
+    "build:renderer": "node scripts/build-context-helper.mjs && node scripts/build-apple-speech.mjs && cd src && vite build",
     "prepare:python": "pip install sherpa-onnx numpy opencc edge-tts pyinstaller && python download_all_models.py",
     "build:backend": "node scripts/build-backend.mjs",
     "build:win": "electron-builder --win",
@@ -19,7 +19,9 @@
     "lint": "cd src && eslint .",
     "preview": "cd src && vite preview",
     "clean": "node cleanup.js && rm -rf python",
-    "build:context": "node scripts/build-context-helper.mjs"
+    "build:context": "node scripts/build-context-helper.mjs",
+    "build:apple": "node scripts/build-apple-speech.mjs",
+    "build:mac": "npm run build:backend && npm run build:renderer && electron-builder --mac"
   },
   "electronmon": {
     "patterns": [
@@ -180,6 +182,10 @@
         {
           "from": "native/build/context-reader",
           "to": "context-reader"
+        },
+        {
+          "from": "native/build/apple-speech",
+          "to": "apple-speech"
         }
       ]
     }

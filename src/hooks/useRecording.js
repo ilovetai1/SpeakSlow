@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { convertText, useTranslation } from '../i18n';
+import { createPcmTransport } from '../utils/pcmTransport.mjs';
+import { speechError } from '../utils/speechEngineMessages.mjs';
 import { beginLatency } from '../utils/latencyRecorder.mjs';
 import { createSingleFlightGate, finalizeTranscript } from '../utils/transcriptFinalization.mjs';
 
@@ -18,6 +20,12 @@ export const useRecording = (modelStatus) => {
   const [audioData, setAudioData] = useState(null);
 
   const streamRef = useRef(null);
+  const speechJobRef = useRef(null);
+  const appleTransportRef = useRef(null);
+  const stoppingRef = useRef(false);
+  const startingRef = useRef(false);
+  const cancelledRef = useRef(false);
+  const [previewText, setPreviewText] = useState('');
   const audioContextRef = useRef(null);
   const processorRef = useRef(null);
   const sourceRef = useRef(null);
@@ -121,7 +129,14 @@ export const useRecording = (modelStatus) => {
       setError('上一段錄音仍在處理中');
       return false;
     }
+    startingRef.current = true; cancelledRef.current = false;
+    let startedJob;
     try {
+      startedJob = await window.electronAPI.beginSpeechJob('recording');
+      speechJobRef.current = startedJob;
+      if (cancelledRef.current) throw new Error('session_closed');
+      setPreviewText('');
+      appleTransportRef.current?.cancel(); appleTransportRef.current = null;
       metricRef.current = await beginLatency(await window.electronAPI?.getCommandMode?.() === true ? 'command' : 'offline');
       setError(null);
 
@@ -139,6 +154,25 @@ export const useRecording = (modelStatus) => {
       // 检查浏览器支持
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error(t('errors.browserNoRecording'));
+      }
+
+      if (speechJobRef.current.engine === 'apple') {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioContextRef.current = audioContext;
+        const id = speechJobRef.current.id;
+        await window.electronAPI.startSpeechSession(id, { sampleRate: audioContext.sampleRate, channelCount: 1 });
+        if (cancelledRef.current) throw new Error('session_closed');
+        appleTransportRef.current = createPcmTransport({
+          sampleRate: audioContext.sampleRate,
+          send: packet => window.electronAPI.feedSpeechSession(id, packet),
+          onFailure: issue => {
+            setError(speechError(issue));
+            setIsRecording(false); setIsProcessing(false);
+            cleanup(); metricRef.current?.finish('failed');
+            speechJobRef.current = null;
+            window.electronAPI.endSpeechJob(id, true).finally(() => pipelineGateRef.current.finish());
+          },
+        });
       }
 
       // ⚡ 立即設定錄音狀態，讓 UI 馬上反應
@@ -178,6 +212,8 @@ export const useRecording = (modelStatus) => {
         }
       }
 
+      if (cancelledRef.current) { stream.getTracks().forEach(track => track.stop()); throw new Error('session_closed'); }
+
       // 更新狀態
       if (micPermissionRef.current !== 'granted') {
         micPermissionRef.current = 'granted';
@@ -213,7 +249,7 @@ export const useRecording = (modelStatus) => {
       }
 
       // 創建 AudioContext（使用預設採樣率，讓瀏覽器自動處理）
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const audioContext = audioContextRef.current || new (window.AudioContext || window.webkitAudioContext)();
       audioContextRef.current = audioContext;
 
       // 確保 AudioContext 是活躍的
@@ -234,6 +270,7 @@ export const useRecording = (modelStatus) => {
         const inputData = e.inputBuffer.getChannelData(0);
         // 複製數據到緩衝區
         pcmBufferRef.current.push(new Float32Array(inputData));
+        appleTransportRef.current?.push(inputData);
       };
 
       source.connect(processor);
@@ -243,7 +280,7 @@ export const useRecording = (modelStatus) => {
       // 效能模式（asr_profile: standard | fast）跟正式辨識用同一顆模型
       let asrProfile = 'standard';
       try {
-        asrProfile = await window.electronAPI?.getSetting?.('asr_profile', 'standard') || 'standard';
+        asrProfile = speechJobRef.current?.engine === 'sherpa' ? speechJobRef.current.profile : 'standard';
       } catch (e) { /* 預設 standard */ }
       precogRef.current = { active: false, fedChunks: 0, recoveryFed: 0, timer: null, profile: asrProfile };
       const srcRate = audioContext.sampleRate;
@@ -263,9 +300,10 @@ export const useRecording = (modelStatus) => {
               window.electronAPI?.recoveryAppend?.(rb64);
             } catch (e) { /* 救援失敗不影響錄音 */ }
           }
+          if (speechJobRef.current?.engine === 'apple') return;
           if (!p.active) {
             if (totalSamples / srcRate < PRECOG_START_SEC) return;
-            const r = await window.electronAPI?.precogStart?.(p.profile);
+            const r = await window.electronAPI?.precogStart?.(p.profile, speechJobRef.current?.id);
             if (!r?.success) { stopPrecogTimer(); return; } // 後端不支援就放棄
             p.active = true;
           }
@@ -273,7 +311,7 @@ export const useRecording = (modelStatus) => {
           if (newChunks.length === 0) return;
           p.fedChunks = chunks.length;
           const b64 = chunksToPcm16Base64(newChunks, srcRate);
-          window.electronAPI?.precogFeed?.(b64);
+          window.electronAPI?.precogFeed?.(b64, speechJobRef.current?.id);
         } catch (err) {
           stopPrecogTimer(); // 任何錯誤 → 停止餵，回退一般路徑
         }
@@ -282,20 +320,28 @@ export const useRecording = (modelStatus) => {
       if (metricRef.current) metricRef.current.record('capture', 'success', metricRef.current.clock() - metricRef.current.captureStart);
     } catch (err) {
       metricRef.current?.finish('failed');
-      setError(t('errors.cannotStartRecording', { error: err.message }));
+      if (!cancelledRef.current) setError(t('errors.cannotStartRecording', { error: err.message }));
       setIsRecording(false);
       cleanup();
+      appleTransportRef.current?.cancel(); appleTransportRef.current = null;
+      const failedJob = startedJob; if (speechJobRef.current?.id === startedJob?.id) speechJobRef.current = null;
+      if (failedJob) await window.electronAPI.endSpeechJob(failedJob.id, true).catch(() => {});
       pipelineGateRef.current.finish();
       return false;
-    }
+    } finally { startingRef.current = false; }
     return true;
   }, [modelStatus.isReady, modelStatus.isLoading, modelStatus.error, cleanup, t]);
 
   // 停止录音
   const stopRecording = useCallback(async () => {
-    if (!isRecording) return;
+    if (!isRecording || stoppingRef.current) return;
+    stoppingRef.current = true;
+    const stoppedJob = speechJobRef.current;
+    const stoppedTransport = appleTransportRef.current;
 
     metricRef.current?.stop();
+    if (processorRef.current) { processorRef.current.onaudioprocess = null; processorRef.current.disconnect(); }
+    sourceRef.current?.disconnect();
     setIsRecording(false);
     setIsProcessing(true);
 
@@ -311,7 +357,7 @@ export const useRecording = (modelStatus) => {
       // 合併所有 PCM 數據
       const totalLength = pcmBufferRef.current.reduce((sum, arr) => sum + arr.length, 0);
 
-      if (totalLength < 1600) { // 小於 0.1 秒的錄音
+      if (totalLength < sourceSampleRate * 0.1) { // 小於 0.1 秒的錄音
         throw new Error(t('errors.recordingTooShort'));
       }
 
@@ -330,12 +376,15 @@ export const useRecording = (modelStatus) => {
           const lastChunks = pcmBufferRef.current.slice(precogRef.current.fedChunks);
           if (lastChunks.length > 0) {
             const b64 = chunksToPcm16Base64(lastChunks, sourceSampleRate);
-            await window.electronAPI?.precogFeed?.(b64);
+            await window.electronAPI?.precogFeed?.(b64, speechJobRef.current?.id);
           }
         } catch (e) {
           /* 餵尾失敗 → 後端 finalize 拿不到完整 precog，會自動回退一般路徑 */
         }
       }
+
+      await appleTransportRef.current?.flush();
+      if (cancelledRef.current) return;
 
       // 清理資源
       cleanup();
@@ -351,6 +400,7 @@ export const useRecording = (modelStatus) => {
       const autoLineBreak = await window.electronAPI?.getSetting?.('auto_line_break', false);
       const saveAudio = await window.electronAPI?.getSetting?.('save_audio', true);
       await processAudio(wavBlob, {
+        jobId: speechJobRef.current?.id,
         use_precog: precogActive,
         profile: precogRef.current.profile || 'standard',
         auto_format_lists: autoFormatLists === true,
@@ -359,10 +409,15 @@ export const useRecording = (modelStatus) => {
       });
     } catch (err) {
       metricRef.current?.finish('failed');
-      setError(t('errors.audioProcessingFailed', { error: err.message }));
+      if (!cancelledRef.current) setError(t('errors.audioProcessingFailed', { error: err.message }));
       cleanup();
     } finally {
+      if (speechJobRef.current?.id === stoppedJob?.id) speechJobRef.current = null;
+      stoppedTransport?.cancel(); if (appleTransportRef.current === stoppedTransport) appleTransportRef.current = null;
+      if (stoppedJob) await window.electronAPI.endSpeechJob(stoppedJob.id, cancelledRef.current).catch(() => {});
+      setPreviewText('');
       setIsProcessing(false);
+      stoppingRef.current = false;
       pipelineGateRef.current.finish();
     }
   }, [isRecording, cleanup, t]);
@@ -376,9 +431,14 @@ export const useRecording = (modelStatus) => {
         const arrayBuffer = await wavBlob.arrayBuffer();
         const uint8Array = new Uint8Array(arrayBuffer);
 
-        const invokeASR = () => window.electronAPI.transcribeAudio(uint8Array, transcribeOptions);
+        const job = speechJobRef.current;
+        const invokeASR = () => job?.engine === 'apple'
+          ? window.electronAPI.finishSpeechSession(job.id, uint8Array, transcribeOptions)
+          : window.electronAPI.transcribeAudio(uint8Array, transcribeOptions);
         const transcriptionResult = metricRef.current ? await metricRef.current.measure('asr', invokeASR) : await invokeASR();
 
+        if (transcribeOptions.jobId && speechJobRef.current?.id !== transcribeOptions.jobId) return { cancelled: true };
+        if (metricRef.current?.stopped !== null) metricRef.current?.record('stop_to_asr_final', 'success', metricRef.current.clock() - metricRef.current.stopped);
         if (transcriptionResult.success) {
           let raw_text = transcriptionResult.text;
 
@@ -432,6 +492,7 @@ export const useRecording = (modelStatus) => {
           setIsOptimizing(useAI && !commandMode);
           const finalized = await finalizeTranscript({
             rawText: raw_text,
+            isCancelled: () => speechJobRef.current?.id !== transcribeOptions.jobId,
             polishingEnabled: useAI,
             commandMode,
             transcriptionData,
@@ -450,6 +511,7 @@ export const useRecording = (modelStatus) => {
 
           if (finalized.cancelled) { metricRef.current?.finish('cancelled'); return { ...transcriptionResult, cancelled: true }; }
 
+          if (speechJobRef.current?.id !== transcribeOptions.jobId) return { cancelled: true };
           if (window.onAIOptimizationComplete) {
             await window.onAIOptimizationComplete({
               ...transcriptionResult,
@@ -546,19 +608,47 @@ export const useRecording = (modelStatus) => {
 
   // 取消录音
   const cancelRecording = useCallback(() => {
+    cancelledRef.current = true;
     metricRef.current?.finish('cancelled');
+    appleTransportRef.current?.cancel(); appleTransportRef.current = null;
+    const job = speechJobRef.current; speechJobRef.current = null;
+    if (job && (startingRef.current || stoppingRef.current)) window.electronAPI.cancelSpeechJob(job.id).catch(() => {});
+    if (job && !startingRef.current && !stoppingRef.current) window.electronAPI.endSpeechJob(job.id, true).catch(() => {});
+    setPreviewText('');
     stopPrecogTimer();
     if (precogRef.current.active) {
       precogRef.current.active = false;
-      window.electronAPI?.precogAbort?.();
+      window.electronAPI?.precogAbort?.(job?.id);
     }
     cleanup();
     setIsRecording(false);
     setIsProcessing(false);
     setIsOptimizing(false);
     setError(null);
-    pipelineGateRef.current.finish();
+    if (!startingRef.current && !stoppingRef.current) pipelineGateRef.current.finish();
   }, [cleanup, stopPrecogTimer]);
+
+  useEffect(() => {
+    const removePreview = window.electronAPI?.onSpeechPreview?.((_event, data) => {
+      if (speechJobRef.current?.id !== data.jobId) return;
+      setPreviewText(data.text);
+      if (metricRef.current && !metricRef.current.hasPreview && data.text.trim()) {
+        metricRef.current.hasPreview = true;
+        metricRef.current.record('first_preview', 'success', metricRef.current.clock() - metricRef.current.captureStart);
+      }
+    });
+    const removeError = window.electronAPI?.onSpeechJobError?.((_event, data) => {
+      if (speechJobRef.current?.id !== data.jobId) return;
+      cancelRecording(); setError(speechError(data.error));
+    });
+    return () => { removePreview?.(); removeError?.(); };
+  }, [cancelRecording]);
+
+  useEffect(() => () => {
+    const job = speechJobRef.current; speechJobRef.current = null;
+    appleTransportRef.current?.cancel(); cleanup();
+    if (job) window.electronAPI?.endSpeechJob?.(job.id, true).catch(() => {});
+  }, [cleanup]);
 
   // 获取录音权限状态
   const checkPermissions = useCallback(async () => {
@@ -580,6 +670,7 @@ export const useRecording = (modelStatus) => {
     isOptimizing,
     error,
     audioData,
+    previewText,
     startRecording,
     stopRecording,
     cancelRecording,

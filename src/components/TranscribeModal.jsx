@@ -1,4 +1,5 @@
 import React from "react";
+import { createPcmTransport } from '../utils/pcmTransport.mjs';
 import { useTranslation } from "../i18n";
 
 // 把 Float32 PCM 重採樣到 16kHz、包成 16-bit mono WAV（與錄音用同一套規格）
@@ -55,61 +56,82 @@ export default function TranscribeModal({ onClose }) {
   const [errMsg, setErrMsg] = React.useState("");
   const [mode, setMode] = React.useState("txt"); // txt | srt
   const cancelRef = React.useRef(false);
+  const jobRef = React.useRef(null);
   const fileInputRef = React.useRef(null);
   const modeRef = React.useRef("txt");
   modeRef.current = mode;
 
   const run = React.useCallback(async (file) => {
-    if (!file) return;
-    cancelRef.current = false;
-    setFileName(file.name);
-    setStatus("decoding");
-    setTranscript("");
-    setProgress(0);
-    setErrMsg("");
+    if (!file || jobRef.current) return;
+    cancelRef.current = false; jobRef.current = { starting: true };
+    setFileName(file.name); setStatus('decoding'); setTranscript(''); setProgress(0); setErrMsg('');
+    let job;
     try {
+      job = await window.electronAPI.beginSpeechJob('file'); jobRef.current = job;
+      if (cancelRef.current) return;
       const arrayBuffer = await file.arrayBuffer();
       const Ctx = window.AudioContext || window.webkitAudioContext;
-      const ctx = new Ctx();
-      let audioBuf;
-      try {
-        audioBuf = await ctx.decodeAudioData(arrayBuffer);
-      } finally {
-        ctx.close();
-      }
+      const context = new Ctx(); let audioBuf;
+      try { audioBuf = await context.decodeAudioData(arrayBuffer); } finally { await context.close(); }
+      if (cancelRef.current) return;
       const srcRate = audioBuf.sampleRate;
-      const data = audioBuf.getChannelData(0); // 取第一聲道
-      const srt = modeRef.current === "srt";
-      // 切 60 秒一段（給進度 + 控記憶體；邊界偶有小瑕疵，v1 可接受）
-      const chunkSamples = CHUNK_SEC * srcRate;
-      const totalChunks = Math.max(1, Math.ceil(data.length / chunkSamples));
-      setStatus("transcribing");
-      let out = "";          // 逐字稿模式累積文字
-      const allSegs = [];    // 字幕模式累積 segment（含全域時間軸）
-      for (let i = 0; i < totalChunks; i++) {
-        if (cancelRef.current) { setStatus("idle"); return; }
-        const slice = data.subarray(i * chunkSamples, Math.min((i + 1) * chunkSamples, data.length));
-        const wav = pcmToWav(slice, srcRate, 16000);
-        const offset = i * CHUNK_SEC; // 此段在整檔的起始秒數
-        try {
-          const res = await window.electronAPI?.transcribeAudio?.(wav, srt ? { segments: true, no_persist: true } : { no_persist: true });
-          if (res?.success && srt && Array.isArray(res.segments)) {
-            for (const g of res.segments) {
-              if (g?.text?.trim()) allSegs.push({ start: g.start + offset, end: g.end + offset, text: g.text.trim() });
-            }
-            setTranscript(buildSrt(allSegs));
-          } else if (res?.success && res.text && res.text.trim()) {
-            out += (out ? "\n" : "") + res.text.trim();
-            setTranscript(out);
-          }
-        } catch (e) { /* 單段失敗就跳過，繼續 */ }
-        setProgress(Math.round(((i + 1) / totalChunks) * 100));
+      const data = audioBuf.numberOfChannels === 1 ? audioBuf.getChannelData(0) : new Float32Array(audioBuf.length);
+      if (audioBuf.numberOfChannels > 1) for (let channel = 0; channel < audioBuf.numberOfChannels; channel++) {
+        const plane = audioBuf.getChannelData(channel);
+        for (let index = 0; index < data.length; index++) data[index] += plane[index] / audioBuf.numberOfChannels;
       }
-      setStatus("done");
-    } catch (e) {
-      setErrMsg(e?.message || String(e));
-      setStatus("error");
+      const srt = modeRef.current === 'srt';
+      setStatus('transcribing');
+      if (job.engine === 'apple') {
+        await window.electronAPI.startSpeechSession(job.id, { sampleRate: srcRate, channelCount: 1 });
+        const transport = createPcmTransport({ sampleRate: srcRate, send: packet => window.electronAPI.feedSpeechSession(job.id, packet) });
+        const stride = Math.floor(srcRate / 10);
+        for (let offset = 0; offset < data.length; offset += stride) {
+          if (cancelRef.current) { transport.cancel(); return; }
+          transport.push(data.subarray(offset, Math.min(offset + stride, data.length)));
+          await transport.flush();
+          setProgress(Math.round(Math.min(99, (offset + stride) / data.length * 100)));
+        }
+        const result = await window.electronAPI.finishSpeechSession(job.id, new Uint8Array(), { no_persist: true });
+        if (cancelRef.current) return;
+        if (srt) {
+          if (!Array.isArray(result.segments) || result.segments.some(g => !Number.isFinite(g.start) || !Number.isFinite(g.end) || g.end <= g.start)) throw new Error('無可靠時間軸，未產生SRT');
+          setTranscript(buildSrt(result.segments));
+        } else setTranscript(result.text);
+      } else {
+        const chunkSamples = CHUNK_SEC * srcRate;
+        const totalChunks = Math.max(1, Math.ceil(data.length / chunkSamples));
+        let out = ''; const segments = [];
+        for (let i = 0; i < totalChunks; i++) {
+          if (cancelRef.current) return;
+          const slice = data.subarray(i * chunkSamples, Math.min((i + 1) * chunkSamples, data.length));
+          const result = await window.electronAPI.transcribeAudio(pcmToWav(slice, srcRate), { jobId: job.id, segments: srt, no_persist: true });
+          if (!result?.success) throw new Error(result?.error || '檔案轉錄失敗，結果不完整');
+          if (cancelRef.current) return;
+          if (srt) {
+            if (!Array.isArray(result.segments)) throw new Error('無可靠時間軸，未產生SRT');
+            for (const g of result.segments) {
+              if (!Number.isFinite(g.start) || !Number.isFinite(g.end) || g.end <= g.start) throw new Error('無可靠時間軸，未產生SRT');
+              if (g.text?.trim()) segments.push({ start: g.start + i * CHUNK_SEC, end: g.end + i * CHUNK_SEC, text: g.text.trim() });
+            }
+            setTranscript(buildSrt(segments));
+          } else { out += (out ? '\n' : '') + result.text.trim(); setTranscript(out); }
+          setProgress(Math.round((i + 1) / totalChunks * 100));
+        }
+      }
+      setProgress(100); setStatus('done');
+    } catch (issue) {
+      if (!cancelRef.current) { setErrMsg(issue?.message || '轉錄失敗，結果不完整'); setStatus('error'); }
+    } finally {
+      if (job) await window.electronAPI.endSpeechJob(job.id, cancelRef.current).catch(() => {});
+      jobRef.current = null;
+      if (cancelRef.current) setStatus('idle');
     }
+  }, []);
+
+  React.useEffect(() => () => {
+    cancelRef.current = true;
+    if (jobRef.current?.id) window.electronAPI.endSpeechJob(jobRef.current.id, true).catch(() => {});
   }, []);
 
   const onPick = (e) => { const f = e.target.files?.[0]; if (f) run(f); };
@@ -211,7 +233,7 @@ export default function TranscribeModal({ onClose }) {
         {/* 動作列 */}
         <div className="shrink-0 flex items-center gap-2">
           {busy ? (
-            <button onClick={() => { cancelRef.current = true; }} className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300">
+            <button onClick={() => { cancelRef.current = true; if (jobRef.current?.id) window.electronAPI.endSpeechJob(jobRef.current.id, true).catch(() => {}); }} className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300">
               {t("transcribe.stop")}
             </button>
           ) : (
@@ -221,7 +243,7 @@ export default function TranscribeModal({ onClose }) {
           )}
           <div className="flex-1" />
           <button disabled={!transcript} onClick={copyAll} className="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-40">{t("transcribe.copy")}</button>
-          <button disabled={!transcript} onClick={exportTxt} className="px-3 py-1.5 text-sm rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40">{mode === "srt" ? t("transcribe.exportSrt") : t("transcribe.export")}</button>
+          <button disabled={!transcript || status !== "done"} onClick={exportTxt} className="px-3 py-1.5 text-sm rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40">{mode === "srt" ? t("transcribe.exportSrt") : t("transcribe.export")}</button>
         </div>
       </div>
     </div>
