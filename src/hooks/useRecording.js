@@ -24,6 +24,7 @@ export const useRecording = (modelStatus) => {
   const appleTransportRef = useRef(null);
   const stoppingRef = useRef(false);
   const startingRef = useRef(false);
+  const cancellingRef = useRef(false);
   const cancelledRef = useRef(false);
   const [previewText, setPreviewText] = useState('');
   const audioContextRef = useRef(null);
@@ -608,12 +609,14 @@ export const useRecording = (modelStatus) => {
 
   // 取消录音
   const cancelRecording = useCallback(() => {
+    if (cancellingRef.current) return;
     cancelledRef.current = true;
     metricRef.current?.finish('cancelled');
     appleTransportRef.current?.cancel(); appleTransportRef.current = null;
     const job = speechJobRef.current; speechJobRef.current = null;
     if (job && (startingRef.current || stoppingRef.current)) window.electronAPI.cancelSpeechJob(job.id).catch(() => {});
-    if (job && !startingRef.current && !stoppingRef.current) window.electronAPI.endSpeechJob(job.id, true).catch(() => {});
+    const releaseJob = job && !startingRef.current && !stoppingRef.current;
+    if (releaseJob) cancellingRef.current = true;
     setPreviewText('');
     stopPrecogTimer();
     if (precogRef.current.active) {
@@ -622,10 +625,19 @@ export const useRecording = (modelStatus) => {
     }
     cleanup();
     setIsRecording(false);
-    setIsProcessing(false);
+    setIsProcessing(!!releaseJob);
     setIsOptimizing(false);
     setError(null);
-    if (!startingRef.current && !stoppingRef.current) pipelineGateRef.current.finish();
+    if (releaseJob) {
+      // Keep both UI and local gate busy until the main process releases its lease.
+      window.electronAPI.endSpeechJob(job.id, true)
+        .catch(issue => setError(speechError(issue)))
+        .finally(() => {
+          cancellingRef.current = false;
+          setIsProcessing(false);
+          pipelineGateRef.current.finish();
+        });
+    } else if (!startingRef.current && !stoppingRef.current) pipelineGateRef.current.finish();
   }, [cleanup, stopPrecogTimer]);
 
   useEffect(() => {
