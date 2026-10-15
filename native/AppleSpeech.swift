@@ -1,4 +1,4 @@
-// JSONL protocol v1. The host owns microphone capture, permissions and files.
+// JSONL protocol v2. The host owns microphone capture, permissions and files.
 import Foundation
 import AVFoundation
 import Speech
@@ -79,10 +79,61 @@ struct AcknowledgedInputs: AsyncSequence, Sendable {
 }
 
 @available(macOS 26, *)
+enum TranscriberModule {
+    case speech(SpeechTranscriber)
+    case dictation(DictationTranscriber)
+
+    init(profile: String) {
+        let locale = Locale(identifier: "zh-TW")
+        if profile == "dictation" {
+            var preset = DictationTranscriber.Preset.progressiveLongDictation
+            preset.attributeOptions.insert(.audioTimeRange)
+            self = .dictation(DictationTranscriber(locale: locale, preset: preset))
+        } else {
+            let reports: Set<SpeechTranscriber.ReportingOption> = profile == "responsive" ? [.volatileResults, .fastResults] : [.volatileResults]
+            self = .speech(SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: reports, attributeOptions: [.audioTimeRange]))
+        }
+    }
+    var module: any SpeechModule {
+        switch self { case .speech(let value): return value; case .dictation(let value): return value }
+    }
+    func readResults(sessionId: String) async throws {
+        switch self {
+        case .speech(let value):
+            for try await result in value.results { try publish(result.text, result: result, sessionId: sessionId) }
+        case .dictation(let value):
+            for try await result in value.results { try publish(result.text, result: result, sessionId: sessionId) }
+        }
+    }
+    private func publish(_ text: AttributedString, result: any SpeechModuleResult, sessionId: String) throws {
+        let start = CMTimeGetSeconds(result.range.start)
+        let end = CMTimeGetSeconds(CMTimeRangeGetEnd(result.range))
+        let watermark = CMTimeGetSeconds(result.resultsFinalizationTime)
+        guard start.isFinite, end.isFinite, end >= start else { throw fail("result_range") }
+        var units: [[String: Any]] = []
+        var prefix = ""
+        for run in text.runs {
+            let value = String(text[run.range].characters)
+            if let time = run.audioTimeRange {
+                let a = CMTimeGetSeconds(time.start), b = CMTimeGetSeconds(CMTimeRangeGetEnd(time))
+                if a.isFinite && b.isFinite && b >= a {
+                    units.append(["text": prefix + value, "start": a, "end": b]); prefix = ""
+                } else { prefix += value }
+            } else if !units.isEmpty {
+                let last = units.count - 1
+                units[last]["text"] = (units[last]["text"] as? String ?? "") + value
+            } else { prefix += value }
+        }
+        if !prefix.isEmpty && !units.isEmpty { units[units.count - 1]["text"] = (units.last?["text"] as? String ?? "") + prefix }
+        emit(["event": "result", "sessionId": sessionId, "text": String(text.characters), "start": start, "end": end, "units": units, "finalizedThrough": watermark.isFinite ? watermark : result.isFinal ? end : 0, "isFinal": result.isFinal])
+    }
+}
+
+@available(macOS 26, *)
 actor AnalysisSession {
     let id: String
     let analyzer: SpeechAnalyzer
-    let transcriber: SpeechTranscriber
+    let transcriber: TranscriberModule
     let inputFormat: AVAudioFormat
     let outputFormat: AVAudioFormat
     let converter: AVAudioConverter
@@ -98,15 +149,13 @@ actor AnalysisSession {
 
     init(id: String, profile: String, rate: Double, channels: AVAudioChannelCount) async throws {
         self.id = id
-        var reports: Set<SpeechTranscriber.ReportingOption> = [.volatileResults]
-        if profile == "responsive" { reports.insert(.fastResults) }
-        transcriber = SpeechTranscriber(locale: Locale(identifier: "zh-TW"), transcriptionOptions: [], reportingOptions: reports, attributeOptions: [.audioTimeRange])
-        guard let target = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]),
+        transcriber = TranscriberModule(profile: profile)
+        guard let target = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber.module]),
               let source = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: channels, interleaved: false),
               let conversion = AVAudioConverter(from: source, to: target) else { throw fail("audio_format") }
         inputFormat = source; outputFormat = target; converter = conversion
         converter.primeMethod = .none
-        analyzer = SpeechAnalyzer(modules: [transcriber], options: .init(priority: .userInitiated, modelRetention: .whileInUse))
+        analyzer = SpeechAnalyzer(modules: [transcriber.module], options: .init(priority: .userInitiated, modelRetention: .whileInUse))
         let (stream, continuation) = AsyncStream<QueuedInput>.makeStream(bufferingPolicy: .bufferingOldest(20))
         self.continuation = continuation
         try await analyzer.prepareToAnalyze(in: target)
@@ -114,28 +163,7 @@ actor AnalysisSession {
         let receipts = self.receipts
         reader = Task {
           do {
-            for try await result in transcriber.results {
-                let start = CMTimeGetSeconds(result.range.start)
-                let end = CMTimeGetSeconds(CMTimeRangeGetEnd(result.range))
-                let watermark = CMTimeGetSeconds(result.resultsFinalizationTime)
-                guard start.isFinite, end.isFinite, end >= start else { throw fail("result_range") }
-                var units: [[String: Any]] = []
-                var prefix = ""
-                for run in result.text.runs {
-                    let text = String(result.text[run.range].characters)
-                    if let time = run.audioTimeRange {
-                        let a = CMTimeGetSeconds(time.start), b = CMTimeGetSeconds(CMTimeRangeGetEnd(time))
-                        if a.isFinite && b.isFinite && b >= a {
-                            units.append(["text": prefix + text, "start": a, "end": b]); prefix = ""
-                        } else { prefix += text }
-                    } else if !units.isEmpty {
-                        let last = units.count - 1
-                        units[last]["text"] = (units[last]["text"] as? String ?? "") + text
-                    } else { prefix += text }
-                }
-                if !prefix.isEmpty && !units.isEmpty { units[units.count - 1]["text"] = (units.last?["text"] as? String ?? "") + prefix }
-                emit(["event": "result", "sessionId": id, "text": String(result.text.characters), "start": start, "end": end, "units": units, "finalizedThrough": watermark.isFinite ? watermark : result.isFinal ? end : 0, "isFinal": result.isFinal])
-            }
+            try await transcriber.readResults(sessionId: id)
           } catch { receipts.cancel(); throw error }
         }
         do { try await analyzer.start(inputSequence: AcknowledgedInputs(stream: stream)) }
@@ -225,12 +253,12 @@ actor AnalysisSession {
 @available(macOS 26, *)
 actor SpeechServer {
     var session: AnalysisSession?
-    func module(_ profile: String) -> SpeechTranscriber {
-        SpeechTranscriber(locale: Locale(identifier: "zh-TW"), transcriptionOptions: [], reportingOptions: profile == "responsive" ? [.volatileResults, .fastResults] : [.volatileResults], attributeOptions: [.audioTimeRange])
+    func module(_ profile: String) -> any SpeechModule {
+        TranscriberModule(profile: profile).module
     }
     func probe(_ profile: String) async throws -> [String: Any] {
-        guard SpeechTranscriber.isAvailable else { return ["state": "unavailable", "reason": "device_unsupported"] }
-        let locales = await SpeechTranscriber.supportedLocales
+        if profile != "dictation", !SpeechTranscriber.isAvailable { return ["state": "unavailable", "reason": "device_unsupported"] }
+        let locales = profile == "dictation" ? await DictationTranscriber.supportedLocales : await SpeechTranscriber.supportedLocales
         let exact = locales.contains { $0.language.languageCode?.identifier == "zh" && $0.region?.identifier == "TW" && $0.language.script?.identifier != "Hans" }
         guard exact else { return ["state": "unavailable", "reason": "locale_unsupported"] }
         let status = await AssetInventory.status(forModules: [module(profile)])
@@ -247,10 +275,10 @@ actor SpeechServer {
         let op = command["op"] as? String ?? ""
         let profile = command["profile"] as? String ?? "accurate"
         do {
-            guard !id.isEmpty, ["accurate", "responsive"].contains(profile) else { throw fail("protocol_invalid") }
+            guard !id.isEmpty, ["accurate", "responsive", "dictation"].contains(profile) else { throw fail("protocol_invalid") }
             var result: [String: Any] = [:]
             switch op {
-            case "hello": result = ["protocol": 1]
+            case "hello": result = ["protocol": 2]
             case "probe": result = try await probe(profile)
             case "prepare":
                 let transcriber = module(profile)

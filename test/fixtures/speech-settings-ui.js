@@ -20,9 +20,15 @@ const select = (id, value) => { const control = document.getElementById(id); con
 (async () => {
   await wait(() => document.querySelector('#speech-engine'));
   check(document.querySelector('#speech-engine').value === 'sherpa', 'default changed');
+  check(writes.length === 0, 'opening settings changed saved preferences');
   select('speech-engine', 'apple'); await wait(() => document.querySelector('#apple-response-profile'));
+  check(document.querySelector('#apple-response-profile').value === 'accurate', 'Apple default changed');
   check(writes[0].value === 'apple', 'selection not persisted');
   select('apple-response-profile', 'responsive'); await wait(() => state.profile === 'responsive');
+  select('apple-response-profile', 'dictation'); await wait(() => state.profile === 'dictation');
+  check(writes.at(-1).key === 'apple_response_profile' && writes.at(-1).value === 'dictation', 'dictation selection not persisted');
+  await wait(() => document.body.textContent.includes('部分測試音訊中會漏字'));
+  check(document.querySelector('option[value="accurate"]').textContent.includes('SpeechTranscriber'), 'SpeechTranscriber was removed');
   publish({ state: 'busy', busy: true }); await wait(() => document.querySelector('#speech-engine').disabled);
   check(document.querySelector('#apple-response-profile').disabled, 'profile bypasses busy gate');
   publish({ state: 'ready', busy: false, selected: 'sherpa' }); await wait(() => !document.querySelector('#apple-response-profile'));

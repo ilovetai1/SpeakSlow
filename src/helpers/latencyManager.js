@@ -3,7 +3,7 @@ const { performance } = require('node:perf_hooks');
 const STAGES = ['capture', 'asr', 'polish', 'history_save', 'paste_command', 'context', 'hotkey_to_capture_ready', 'stop_to_paste_command_ack', 'first_preview', 'stop_to_asr_final'];
 const OUTCOMES = ['success', 'failed', 'cancelled', 'skipped', 'missing'];
 const ASR_ENGINES = ['sherpa', 'apple', 'unknown'];
-const ASR_PROFILES = ['standard', 'fast', 'streaming', 'accurate', 'responsive', 'unknown'];
+const ASR_PROFILES = ['standard', 'fast', 'streaming', 'accurate', 'responsive', 'dictation', 'unknown'];
 const DAYS = 7 * 86400000;
 const choose = (value, allowed, fallback = 'unknown') => allowed.includes(value) ? value : fallback;
 function observation(stage, outcome, duration) {

@@ -87,6 +87,18 @@ The system MUST retain the selected preference after preparation or recognition 
 - **THEN** Apple remains selected with a failed state and recording stays blocked until a successful retry or explicit switch
 - **AND** Sherpa does not restart automatically
 
+### Requirement: Apple Dictation is an explicit selectable mode
+Apple settings SHALL preserve the existing SpeechTranscriber `accurate` default and `responsive` option and add a distinct `dictation` profile using DictationTranscriber. All recording, file and history routes SHALL freeze and use the chosen profile. Switching SHALL obey the existing busy, persistence and lifecycle gates. Dictation assets and zh-TW support SHALL be queried for Dictation itself; Speech availability MUST NOT be used as its device gate. The system MUST NOT use either Apple module as an implicit fallback for the other.
+
+#### Scenario: User selects system dictation
+- **WHEN** an idle user explicitly chooses `dictation`
+- **THEN** the selection persists and synchronizes across windows, and the runtime prepares DictationTranscriber
+- **AND** new jobs and latency groups identify `dictation` separately from both Speech profiles
+
+#### Scenario: Dictation assets are missing
+- **WHEN** Dictation is selected but its zh-TW assets are not installed
+- **THEN** the UI displays its download requirement without running SpeechTranscriber in its place
+
 ### Requirement: Engine-specific preferences have explicit applicability
 Apple SHALL provide `完整上下文` (`accurate`, default) using volatile results without fast results and `即時回饋` (`responsive`) explicitly adding fast results with a quality tradeoff explanation. Sherpa performance, streaming, pause-based line breaks, heuristic list formatting, and native hotword controls SHALL remain saved and apply only to Sherpa. Post-recognition dictionary controls SHALL remain available with Apple.
 

@@ -21,13 +21,15 @@ export default function SpeechEngineSettings() {
     </select>
     <p role="status" className="text-sm text-gray-600 dark:text-gray-300">{speechStateLabels[status.state] || status.state}{status.isDownloading ? ` ${Math.round(status.downloadProgress)}%` : ''}</p>
     {status.selected === 'apple' && <>
-      <label htmlFor="apple-response-profile" className="text-sm">辨識偏好</label>
+      <label htmlFor="apple-response-profile" className="text-sm">Apple 辨識模式</label>
       <select id="apple-response-profile" value={status.profile || 'accurate'} disabled={saving || status.busy} onChange={event => run(() => window.electronAPI.selectSpeechEngine('apple_response_profile', event.target.value))} className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2">
-        <option value="accurate">完整上下文（預設）</option>
-        <option value="responsive">即時回饋（較快，可能增加錯字）</option>
+        <option value="accurate">SpeechTranscriber・完整上下文（預設）</option>
+        <option value="responsive">SpeechTranscriber・即時回饋（可能增加錯字）</option>
+        <option value="dictation">DictationTranscriber・系統聽寫</option>
       </select>
+      {status.profile === 'dictation' && <p className="text-xs text-amber-700 dark:text-amber-300">系統聽寫在部分測試音訊中會漏字，請以真人口述確認結果。</p>}
       <p className="text-xs text-gray-500">目前使用台灣繁體中文，支援可修訂預覽，停止並定稿後才貼上。保留 Apple 原生標點；辨識後詞庫仍可校正專有名詞。原生熱詞、依停頓分行與規則列點不適用。</p>
-      <p className="text-xs text-gray-500">完整上下文的短句可能在停止後才出字；即時回饋通常較早出字，但不保證像 iPhone 一樣立即顯示。</p>
+      <p className="text-xs text-gray-500">完整上下文的短句可能在停止後才出字；即時回饋與系統聽寫提供可修訂預覽，仍需比較選詞及漏字。系統聽寫使用另一套 Apple 模型，不保證與 iPhone 體驗相同。</p>
       <p className="text-xs text-gray-500">語音辨識在裝置端執行。若另啟用雲端 AI 潤稿，文字仍依該功能設定傳送。</p>
     </>}
     {status.state === 'needs_download' && <button disabled={saving} onClick={() => run(() => window.electronAPI.installSpeechAssets())} className="rounded-lg bg-blue-600 text-white px-3 py-2">下載所需模型</button>}

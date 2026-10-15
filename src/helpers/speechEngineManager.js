@@ -72,7 +72,7 @@ class SpeechEngineManager extends EventEmitter {
   publish() { const state = this.snapshot(); this.emit('state', state); return state; }
   initialize() { this.preparing = this.prepare(); return this.preparing; }
   async prepare() {
-    if (!['sherpa', 'apple'].includes(this.selected) || !['accurate', 'responsive'].includes(this.profile)) { this.state = 'failed'; this.reason = 'engine_setting_invalid'; return this.publish(); }
+    if (!['sherpa', 'apple'].includes(this.selected) || !['accurate', 'responsive', 'dictation'].includes(this.profile)) { this.state = 'failed'; this.reason = 'engine_setting_invalid'; return this.publish(); }
     const generation = this.generation;
     this.state = 'preparing'; this.reason = null; this.progress = 0; this.publish();
     try {
@@ -84,7 +84,7 @@ class SpeechEngineManager extends EventEmitter {
   }
   async select(key, value) {
     if (!['asr_engine', 'apple_response_profile'].includes(key)) throw new Error('engine_setting_invalid');
-    if (!(key === 'asr_engine' ? ['sherpa', 'apple'] : ['accurate', 'responsive']).includes(value)) throw new Error('engine_setting_invalid');
+    if (!(key === 'asr_engine' ? ['sherpa', 'apple'] : ['accurate', 'responsive', 'dictation']).includes(value)) throw new Error('engine_setting_invalid');
     if (this.job || this.transition) throw new Error('speech_busy');
     if (key === 'asr_engine' && value === 'apple' && this.apple.supportReason()) throw new Error(this.apple.supportReason());
     this.transition = true;

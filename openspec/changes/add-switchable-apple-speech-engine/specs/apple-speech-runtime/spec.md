@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Apple recognition uses a deployment-compatible native helper
-The Apple adapter SHALL use a versioned owned Swift helper with `SpeechAnalyzer` and `SpeechTranscriber`, an explicit macOS 26 deployment baseline, and runtime availability checks. The main application SHALL retain its existing cross-platform minimum requirements. macOS 27-only converters, input providers, and resource-limit overrides MUST NOT be required by the macOS 26 path.
+The Apple adapter SHALL use a versioned owned Swift helper with `SpeechAnalyzer` and explicitly selected `SpeechTranscriber` or `DictationTranscriber`, an explicit macOS 26 deployment baseline, and module-specific runtime availability checks. Protocol v2 SHALL support the distinct `dictation` profile and reject an old v1 helper. The main application SHALL retain its existing cross-platform minimum requirements. macOS 27-only converters, input providers, and resource-limit overrides MUST NOT be required by the macOS 26 path.
 
 #### Scenario: Helper runs on macOS 26
 - **WHEN** Apple starts on a supported macOS 26 device

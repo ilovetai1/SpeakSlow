@@ -60,7 +60,7 @@ class AppleSpeechManager extends EventEmitter {
       child.on('error', () => { if (this.child === child) this.failAll('helper_launch_failed'); });
       child.on('exit', () => { if (this.child === child) { this.child = null; this.failAll('helper_exited'); } });
       const hello = await this.request('hello');
-      if (hello.protocol !== 1) { child.kill(); throw new Error('helper_protocol'); }
+      if (hello.protocol !== 2) { child.kill(); throw new Error('helper_protocol'); }
     })();
     try { await this.starting; } finally { this.starting = null; }
   }
@@ -114,7 +114,7 @@ class AppleSpeechManager extends EventEmitter {
   async start(id, sampleRate, channelCount = 1, profile = 'accurate') {
     if (this.session) throw new Error('speech_busy');
     this.profile = profile; await this.ensureChild();
-    this.session = { id, sampleRate, channelCount, sequence: 0, transcript: new SpeechTranscript(), chain: Promise.resolve(), pendingFrames: 0 };
+    this.session = { id, profile, sampleRate, channelCount, sequence: 0, transcript: new SpeechTranscript(), chain: Promise.resolve(), pendingFrames: 0 };
     try { await this.request('start', { sessionId: id, sampleRate, channelCount }); }
     catch (error) { this.session = null; throw error; }
   }
@@ -141,15 +141,19 @@ class AppleSpeechManager extends EventEmitter {
       const result = await this.request('finish', { sessionId: id }, 120000);
       if (session.failure || session.cancelled || this.session !== session) throw new Error(session.failure || 'session_closed');
       this.session = null;
-      return { success: true, ...session.transcript.snapshot(), duration: result.duration, language: 'zh-TW', asrEngine: 'apple', asrProfile: this.profile };
+      return { success: true, ...session.transcript.snapshot(), duration: result.duration, language: 'zh-TW', asrEngine: 'apple', asrProfile: session.profile };
     })();
     return session.finishing;
   }
   async cancel(id) {
     const session = this.session; if (!session || session.id !== id) return;
+    if (session.cancelling) return session.cancelling;
     session.cancelled = true;
-    try { if (this.child) await this.request('cancel', { sessionId: id }, 5000); await session.chain; }
-    finally { if (this.session === session) this.session = null; }
+    session.cancelling = (async () => {
+      try { if (this.child) await this.request('cancel', { sessionId: id }, 5000); await session.chain; }
+      finally { if (this.session === session) this.session = null; }
+    })();
+    return session.cancelling;
   }
   async transcribeAudio(value, options = {}) {
     const wav = readWav(value); const id = options.sessionId || randomUUID();
