@@ -69,6 +69,14 @@
 - [x] 10.1 回讀程式、更新使用說明與驗收證據，執行 OpenSpec strict validation；只有實際達成的實作與 runtime 項目才勾完成。
 - [x] 10.2 整理可審閱 diff 與未通過限制；版本號、commit／push／tag、正式安裝／發行依當次明示授權執行，本規劃不預先執行。
 
+## 11. 2026-10-15 可選 Dictation 本機口述測試
+
+- [x] 11.1 完成既有 Dictation 明確選項與原生路由，選取時顯示已觀察到的漏字限制；不變更既有引擎及缺值模式預設。
+- [x] 11.2 驗證選單、保存、忙碌切換限制及原生 Speech／Dictation 切換、取消後恢復；真人辨識品質交由使用者試用。
+- [x] 11.3 更新本機 `/Applications/SpeakSlow.app`，驗證簽章、選項與設定保留；僅保留一份已安裝 App，不 commit／push／發行。
+
+2026-10-15 本輪證據：`out/dictation-menu-install-2026-10-15/`。完整測試144項：141通過、3個選擇性測試skip；另以明確音檔執行原生runtime測試通過。backend／renderer／arm64封裝、OpenSpec strict、diff whitespace與ad-hoc完整簽章檢查通過。安裝後實際helper辨識確認 `dictation` ready及成功，僅作合成音檔smoke，未宣稱真人品質或貼上驗收。真實設定更新前後均為 `asr_engine=apple`、`apple_response_profile`未保存（沿用accurate）；未代使用者切到Dictation。僅保留 `/Applications/SpeakSlow.app`，App已重新啟動。選單由React UI測試與安裝包內容核對；桌面介面擷取工具後續失敗，未宣稱實際視窗的Dictation選取驗收。原11個保留gate不補勾。
+
 
 ## 2026-10-14 執行證據與保留 gate
 
@@ -90,3 +98,14 @@
 ### 後續本機安裝與推送授權
 
 2026-10-14：依使用者明示指示直接更新 `/Applications/SpeakSlow.app`，無備份，Apple 完整上下文已保存且有首次辨識成功證據。再修正麥克風權限測試的串流釋放並更新安裝版；最後132項測試130通過、2 skip。9.2仍未勾：ad-hoc本機安裝不等於正式發行簽章／公證與完整首次權限驗收。使用者另授權提交並推送本次進度至 main 的既有追蹤遠端 fork/main；維持2.1.0，不建tag，不發布release。上方未安裝／未commit／push為初輪結束時紀錄。
+
+## 11. 2026-10-15 明確 Dictation 模式與同音檔比較
+
+- [x] 11.1 保留 Speech accurate／responsive 與預設，新增持久化 dictation 選項；沿用 busy gate／跨視窗同步及獨立 latency 分群。
+- [x] 11.2 helper protocol v2 明確建立 Dictation、查自身 zh-TW／資產，使用 progressiveLongDictation 與時間資訊；不自動 fallback 或下載。
+- [x] 11.3 歷史音訊讀一次、相同 PCM 即時節奏雙模型比較，保留原始文字與獨立準備／首字／尾延遲；可反序、填參考文字算 CER，不改歷史或套用字典／AI／貼上。
+- [x] 11.4 比較全程工作鎖、owner／renderer 結束、取消、恢復所選模式與恢復失敗可見；單元、IPC 與真實 React DOM 測試通過。
+- [x] 11.5 真實 production helper／coordinator 用同一份既有合成音檔驗證三模式、雙模型、取消與重試，記錄音檔 hash；不將合成音視為真人品質驗收。
+- [x] 11.6 完成最後全套回歸、renderer／arm64 封裝與簽章核對、說明與 OpenSpec strict validation；保留既有整體驗收 gate。本輪未另獲安裝／commit／push／發行指示。
+
+本輪：144 項回歸中 141 通過、3 skip；另啟用真實 native helper 測試 1 項通過。ARM64 測試包 ad-hoc 簽章完整性通過，6 份相關 JS／preload 與 helper hash 核對通過。說明與限制見 `docs/APPLE_DICTATION_COMPARISON_2026-10-15.md`；本次新 UI／IPC 的完整封裝互動、已安裝版真人麥克風／品質仍未驗收，不補勾既有 gate。

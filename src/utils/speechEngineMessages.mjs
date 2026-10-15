@@ -12,6 +12,8 @@ const reasons = {
   apple_analysis_failed: 'Apple 語音處理失敗，請重試並確認模型及系統資源。',
   audio_backpressure: '音訊處理來不及接收資料，本次辨識已停止，沒有輸出截斷的結果。',
   audio_format: '此音訊格式無法交給選定的引擎。',
+  audio_read_failed: '無法讀取這份錄音，請檢查檔案與存取權限。',
+  speech_job_invalid: '這次工作已取消或失效，請重新開始。',
   audio_protocol: '音訊資料不完整或順序不正確。',
   audio_disordered: '音訊時間順序不正確，本次處理已停止。',
   assets_not_ready: 'Apple 模型尚未就緒，請重新檢查或準備模型。',
@@ -21,6 +23,8 @@ const reasons = {
   module_output_failed: 'Apple 語音模組未能完成輸出，請重試。',
   sherpa_not_ready: '現有本機引擎啟動失敗，請重試。',
   engine_setting_invalid: '語音引擎設定無效，請重新選擇。',
+  engine_not_selected: '請先在設定選擇 Apple 原生引擎並等待就緒，再比較兩種模型。',
+  session_closed: '本次辨識或比較已取消。',
   engine_setting_save_failed: '語音引擎設定無法保存，仍使用原本的選擇。',
   engine_shutdown_failed: '舊引擎未能結束，請重啟應用程式。',
 };

@@ -105,3 +105,15 @@ Release acceptance SHALL include paired Taiwan Traditional Chinese material cove
 - **WHEN** at least 30 valid paired stop-to-paste-command observations are available
 - **THEN** Apple accountable CPU and physical footprint must be below matched Sherpa measurements and Apple P95 regression must not exceed `max(50ms, Sherpa P95 × 10%)`
 - **AND** these proposed release thresholds do not replace existing latency-instrumentation overhead requirements
+
+### Requirement: Same-recording Apple comparison preserves raw results and timing boundaries
+Saved history audio SHALL provide an explicit Speech versus Dictation comparison while Apple is ready. One lease SHALL block other ASR work through both runs and restoration. The system SHALL read the recording once, feed identical PCM sequentially at audio speed, allow either execution order, and show raw text with separately measured preparation, first-text and audio-end-to-final durations. Comparison SHALL NOT apply dictionaries, conversion, polishing, history changes, new audio persistence or paste. Optional reference-based CER SHALL preserve character and homophone differences while excluding punctuation and whitespace; no accuracy percentage SHALL appear without a reference. Cancellation SHALL invalidate output and restore the saved mode before releasing the lease, or expose restoration failure.
+
+#### Scenario: User compares a saved recording
+- **WHEN** both selected modules complete on the same recording
+- **THEN** the UI displays two raw transcripts and their separate durations without changing the historical transcript or saved engine settings
+- **AND** it explains that real-time replay is not physical-microphone-to-paste acceptance and that single runs can be affected by order and warm-up
+
+#### Scenario: User cancels or a module lacks assets
+- **WHEN** comparison is cancelled or one module cannot run
+- **THEN** cancellation cannot later save or paste text, missing assets are visible for the affected module, and no replacement recognizer runs silently

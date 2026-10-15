@@ -30,6 +30,7 @@ export default function SpeechEngineSettings() {
       {status.profile === 'dictation' && <p className="text-xs text-amber-700 dark:text-amber-300">系統聽寫在部分測試音訊中會漏字，請以真人口述確認結果。</p>}
       <p className="text-xs text-gray-500">目前使用台灣繁體中文，支援可修訂預覽，停止並定稿後才貼上。保留 Apple 原生標點；辨識後詞庫仍可校正專有名詞。原生熱詞、依停頓分行與規則列點不適用。</p>
       <p className="text-xs text-gray-500">完整上下文的短句可能在停止後才出字；即時回饋與系統聽寫提供可修訂預覽，仍需比較選詞及漏字。系統聽寫使用另一套 Apple 模型，不保證與 iPhone 體驗相同。</p>
+      <p className="text-xs text-gray-500">要公平比較，先開啟「保存錄音」，錄一次後到歷史紀錄按「比較 Apple 模型」，用同一份音訊比較文字及反應時間。</p>
       <p className="text-xs text-gray-500">語音辨識在裝置端執行。若另啟用雲端 AI 潤稿，文字仍依該功能設定傳送。</p>
     </>}
     {status.state === 'needs_download' && <button disabled={saving} onClick={() => run(() => window.electronAPI.installSpeechAssets())} className="rounded-lg bg-blue-600 text-white px-3 py-2">下載所需模型</button>}

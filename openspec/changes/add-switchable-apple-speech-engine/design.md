@@ -51,7 +51,7 @@
 | 設定 | 值與預設 | 邊界 |
 | --- | --- | --- |
 | `asr_engine` | `sherpa`（預設）／`apple` | 缺值視為 Sherpa；非法值為設定錯誤，不啟動任意 runtime。 |
-| `apple_response_profile` | `accurate`（預設）／`responsive` | 前者只有 `.volatileResults`；後者再加 `.fastResults`。不用 progressive preset 隱含改變品質。 |
+| `apple_response_profile` | `accurate`（預設）／`responsive`／`dictation` | 前兩者使用 Speech：只有 `.volatileResults`／再加 `.fastResults`；第三者明確使用 Dictation 的 `progressiveLongDictation` 並加 audio-time attributes，不改舊值語意。 |
 | Apple locale | 第一版固定 `zh-TW` | 不把 UI 語言當辨識語言；canonical 底線／連字號差異可正規化，不接受換成 `zh-CN` 等區域。 |
 | 既有 Sherpa 設定 | `asr_profile`、`enable_streaming_mode` 等 | Apple 模式不套用也不清除，切回時恢復其原值。 |
 
@@ -69,7 +69,7 @@ UI 分開呈現「已選引擎」與「實際狀態」：`checking / needs_downl
 
 ### 3. Apple 支援與資產採 runtime gate
 
-產品 gate：macOS ≥26、目前發行的 Apple Silicon 架構、helper 可執行且 protocol 相容、`SpeechTranscriber.isAvailable`、精確 `zh-TW` 在 supportedLocales、資產 ready、session prepare 成功。靜態機型清單不能取代 API；查詢失敗不能假報不支援。
+產品 gate：macOS ≥26、目前發行的 Apple Silicon 架構、helper 可執行且 protocol v2 相容、所選模組精確 `zh-TW` 在自身 supportedLocales、該 module 資產 ready、session prepare 成功。Speech 額外查 `SpeechTranscriber.isAvailable`；Dictation 沒有對等屬性，不以 Speech availability 阻擋 Dictation。靜態機型清單不能取代 API；查詢失敗不能假報不支援。
 
 `supportedLocale(equivalentTo:)` 可能選其他區域，不能直接把回傳非 nil 當成繁中支援。下載與 reservation 使用部署 SDK 的實際 API；區分 supported、reserved、installed 與 downloading，不用 Sherpa 的檔案存在邏輯推論 Apple 模型。
 
@@ -101,7 +101,9 @@ Apple 模式保留引擎的標點、大小寫與原生分段，不呼叫 ct-punc
 
 穩定文稿才依既有設定做繁體轉換與全域／App 字典，然後進入既有 `finalizeTranscript`。AI、貼上、Enter、current-cursor、操作模式 bypass、保存失敗處理與學習核准都沿用既有契約。只准明確詞組規則，不新增無授權的全字元同音更換或語意改寫。Apple 的熱詞 UI 顯示不適用，辨識後詞庫仍可用；不把詞庫編輯誇大成重新訓練 Apple 模型。
 
-`DictationTranscriber` 的 contextualStrings／custom language model 可以另開後續能力；`zh-TW` 回傳音素表不代表建立、載入、推論改善已通過。加入它時須是明確使用者選項，不能作新版失敗時的替代。
+`DictationTranscriber` 已於 2026-10-15 擴充為明確模式，不作 Speech 失敗時的替代。contextualStrings／custom language model 仍可另開後續能力；`zh-TW` 回傳音素表不代表建立、載入、推論改善已通過。
+
+歷史比較持有同一個 coordinator lease，從 record ID 取得已保存音訊，讀檔一次，依指定順序對相同 bytes 執行 Speech 與 Dictation。每塊依 sample clock 節奏供音，模型準備另計；first-text 從供音開始計，final tail 從最後音訊的預定結束點計，均使用 main 的 monotonic clock。比較不走字典／繁體轉換／AI／保存／貼上，也不寫入一般錄音 metrics。允許反轉順序；完成或取消後恢復原保存模式，恢復失敗明示 failed。缺資產以該欄失敗呈現，不自動下載或換模型。CER 僅在使用者提供參考文字後顯示，保留繁簡及選詞差異，忽略標點／空白；計分每份上限 2000 字且超限明示。
 
 ### 7. 所有入口與非 ASR 工具都要有邊界
 

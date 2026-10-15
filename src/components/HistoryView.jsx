@@ -3,6 +3,7 @@ import { useModelStatus } from '../hooks/useModelStatus';
 import { useTranslation } from "../i18n";
 import { getLevelIndex, LEVELS } from "../utils/levels";
 import { historyTextContract } from "../utils/historyPolishing.mjs";
+import AppleSpeechComparison from './AppleSpeechComparison';
 
 // 統計橫幅組件 - 用幽默方式展示成就
 const StatsBanner = ({ stats }) => {
@@ -300,6 +301,7 @@ export const HistoryView = () => {
 
   const [retranscribingId, setRetranscribingId] = React.useState(null);
   const [retranscribingModel, setRetranscribingModel] = React.useState(null);
+  const [comparisonId, setComparisonId] = React.useState(null);
 
   const handleRepolish = async (item) => {
     if (repolishingId || !window.electronAPI?.previewHistoryPolish) return;
@@ -478,6 +480,12 @@ export const HistoryView = () => {
                     {item.audio_path && (
                       <>
                         <button
+                          onClick={() => setComparisonId(item.id)}
+                          disabled={speechStatus.selected !== 'apple' || !speechStatus.isReady || speechStatus.busy || !!retranscribingId}
+                          className="rounded-lg border border-blue-200 px-2 py-1 text-xs text-blue-600 disabled:opacity-50 dark:border-blue-800 dark:text-blue-300"
+                          title={speechStatus.selected === 'apple' ? '同一份錄音比較原始文字與反應時間' : '請先在設定選擇 Apple 原生引擎'}
+                        >比較 Apple 模型</button>
+                        <button
                           onClick={() => handlePlay(item)}
                           className="p-2 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-lg transition-colors"
                           title={playingId === item.id ? t('history.stopPlay') : t('history.play')}
@@ -503,9 +511,9 @@ export const HistoryView = () => {
                         </button>
                         <button
                           onClick={() => handleRetranscribe(item.id, 'paraformer')}
-                          disabled={retranscribingId === item.id}
+                          disabled={!!retranscribingId || speechStatus.busy}
                           className="p-2 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors disabled:opacity-50"
-                          title={`使用目前引擎重新辨識：${speechStatus.selected === 'apple' ? 'Apple' : 'Sherpa'}`} aria-label="使用目前引擎重新辨識"
+                          title={`使用目前模式重新辨識：${speechStatus.selected === 'apple' ? speechStatus.profile === 'dictation' ? 'DictationTranscriber' : 'SpeechTranscriber' : 'Sherpa'}`} aria-label="使用目前引擎重新辨識"
                         >
                           <svg
                             className={`w-4 h-4 text-blue-500 dark:text-blue-400 ${retranscribingId === item.id && retranscribingModel === 'paraformer' ? 'animate-spin' : ''}`}
@@ -585,6 +593,7 @@ export const HistoryView = () => {
         )}
       </div>
 
+      {comparisonId !== null && <AppleSpeechComparison recordId={comparisonId} onClose={() => setComparisonId(null)} />}
       {repolishPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
           <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl dark:bg-gray-800">

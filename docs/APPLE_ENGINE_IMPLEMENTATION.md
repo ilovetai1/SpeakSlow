@@ -9,12 +9,17 @@
 3. Apple 需要 macOS 26 以上及 Apple Silicon。本版固定台灣繁體中文 `zh-TW`；缺模型時，按「下載所需模型」。
 4. 等待狀態成為可使用，再開始錄音。選擇已保存不代表引擎已就緒。
 
-Apple 提供兩種偏好：
+Apple 提供三種模式：
 
 |偏好|行為|
 |---|---|
-|完整上下文，預設|允許較完整的上下文；短句可能等到停止後才出字。|
-|即時回饋|啟用 SDK fast results，通常較早出字，可能增加錯字；不保證立即出字。|
+|SpeechTranscriber・完整上下文，預設|允許較完整的上下文；短句可能等到停止後才出字。|
+|SpeechTranscriber・即時回饋|啟用 SDK fast results，通常較早出字，可能增加錯字；不保證立即出字。|
+|DictationTranscriber・系統聽寫|使用 `progressiveLongDictation` 與原生 audio-time attributes；模型能力、資產與精確 zh-TW 分開查詢，沒有隱含 fallback。|
+
+Dictation 已觀察到部分合成音訊漏字，選取時會顯示提示。2026-10-15 本機更新保留現有選擇與預設；使用者可從「Apple 辨識模式」自行選取系統聽寫，進行真人口述測試。這次接入不代表漏字已修復。
+
+歷史紀錄中已保存錄音的項目提供「比較 Apple 模型」。比較使用同一份 PCM，保留原始結果與獨立計時，不改歷史、字典或潤稿設定；詳細操作與限制見 [2026-10-15 說明](APPLE_DICTATION_COMPARISON_2026-10-15.md)。
 
 錄音、辨識、潤稿、保存及貼上進行期間不能切換。檔案轉錄與歷史重新辨識也使用同一工作鎖。取消工作後，會先結束該工作，再允許切換。
 
@@ -45,9 +50,9 @@ Apple 保留原生標點及段落。Sherpa 熱詞、串流選項、效能偏好�
 |renderer PCM 分塊與積壓上限|`src/utils/pcmTransport.mjs`|
 |引擎與偏好畫面|`src/components/SpeechEngineSettings.jsx`|
 
-錄音仍由 Electron 的原有麥克風流程負責。Swift helper 只接收音訊，不另開麥克風。protocol v1 使用 session、sequence、generation 與 request ID；初始 PCM 塊約 100 ms、單一訊息上限 256 KiB、未送出音訊上限 2 秒。ACK 要等 SDK iterator 取用 buffer，不能只表示寫入 pipe。超限直接失敗。
+錄音仍由 Electron 的原有麥克風流程負責。Swift helper 只接收音訊，不另開麥克風。protocol v2 使用 session、sequence、generation 與 request ID，並支援明確 Dictation 模式；舊 v1 helper 會被拒絕，須一起重建封裝。初始 PCM 塊約 100 ms、單一訊息上限 256 KiB、未送出音訊上限 2 秒。ACK 要等 SDK iterator 取用 buffer，不能只表示寫入 pipe。超限直接失敗。
 
-完整上下文僅開 `.volatileResults`；即時回饋另外開 `.fastResults`。模型使用 `.whileInUse`，不開 macOS 27 的忽略資源限制選項。應用程式僅結束自己擁有的子程序，不終止 Speech／ANE 共享系統服務。ANE 的排程由 Apple 決定，沒有使用者可分配核心數或強制提高使用率的控制。
+Speech 完整上下文僅開 `.volatileResults`；即時回饋另外開 `.fastResults`。Dictation 使用自己的 `progressiveLongDictation`，不套用 Speech 的 fast 選項。模型使用 `.whileInUse`，不開 macOS 27 的忽略資源限制選項。應用程式僅結束自己擁有的子程序，不終止 Speech／ANE 共享系統服務。ANE 的排程由 Apple 決定，沒有使用者可分配核心數或強制提高使用率的控制。
 
 emoji 與繁簡轉換不啟動 Sherpa ASR。TTS 使用獨立 `--utility-only` worker，拒絕 ASR 指令並在閒置後釋放；原有 Edge TTS 仍屬線上功能。
 

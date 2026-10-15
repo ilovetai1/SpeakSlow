@@ -6,6 +6,7 @@ SpeakSlow 目前只使用 Sherpa，使用者無法依繁體中文表現、即時
 
 ## What Changes
 
+- 2026-10-15 擴充：在 Apple 設定明確提供 `DictationTranscriber`（`dictation`），保留 Speech 的 `accurate`／`responsive` 與原預設；歷史保存音訊提供不覆寫資料的同音檔原始結果與反應時間比較。原生 contextualStrings／custom LM 仍不在本輪實作範圍。
 - 設定新增「語音辨識引擎」：`現有本機引擎`（Sherpa，保留為既有與新安裝預設）與 `Apple 原生引擎`。第一版 Apple 使用 `SpeechTranscriber`，提供「完整上下文」（預設）與「即時回饋」兩種處理偏好，明示速度與品質取捨。
 - 以主程序的引擎協調器管理能力、模型準備、錄音 session、切換與釋放；穩態只保留所選引擎的辨識 runtime。設定視窗、狀態輪詢、詞庫或附屬文字功能不得偷偷啟動另一個 ASR runtime。
 - Apple 路徑使用自有 Swift helper、Apple 系統模型資產與連續音訊輸入。辨識期間預覽可修訂文字；停止後等定稿，再走既有字典、可選 AI 潤稿、歷史及貼上流程。保留 Apple 原生標點，不再疊加 Sherpa 的標點模型或句尾硬規則。

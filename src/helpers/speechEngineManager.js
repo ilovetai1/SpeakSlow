@@ -1,5 +1,5 @@
 const { EventEmitter } = require('node:events');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 
 class SherpaAdapter {
@@ -46,7 +46,7 @@ class SpeechEngineManager extends EventEmitter {
       if (this.job) this.emit('job-error', { jobId: this.job.id, error: 'sherpa_not_ready' });
     };
     apple.on('download', progress => { if (this.selected === 'apple') { this.progress = progress; this.publish(); } });
-    apple.on('preview', data => { if (this.job?.id === data.sessionId && !this.job.cancelled) this.emit('preview', { jobId: this.job.id, text: data.text }); });
+    apple.on('preview', data => { if (this.job?.id === data.sessionId && !this.job.cancelled && !this.job.comparing) this.emit('preview', { jobId: this.job.id, text: data.text }); });
     apple.on('session-error', code => { if (this.job && this.job.engine === 'apple') this.emit('job-error', { jobId: this.job.id, error: code }); });
     apple.on('runtime-error', code => { if (this.selected === 'apple' && !this.transition && this.state === 'ready') { this.state = 'failed'; this.reason = code; this.publish(); } });
   }
@@ -202,6 +202,56 @@ class SpeechEngineManager extends EventEmitter {
       if (job.engine === 'apple') result = await this.processApple(result, job);
       this.requireJob(job.id, owner); await commit?.(result); return { ...result, asrEngine: job.engine };
     } finally { await this.end(job.id, owner); }
+  }
+  async compareAppleFilePath(file, owner, { speechProfile = 'accurate', first = 'speech' } = {}) {
+    if (!['accurate', 'responsive'].includes(speechProfile) || !['speech', 'dictation'].includes(first)) throw new Error('engine_setting_invalid');
+    if (this.selected !== 'apple') throw new Error('engine_not_selected');
+    const lease = this.begin('history', owner);
+    const job = this.requireJob(lease.id, owner);
+    job.comparing = true;
+    // The whole pair owns one lease. Neither run changes saved preferences,
+    // applies dictionaries/AI, writes history/audio, or sends text to another App.
+    job.pending = (async () => {
+      const rows = [];
+      let output;
+      try {
+        const audio = await fs.readFile(file);
+        const profiles = first === 'speech' ? [speechProfile, 'dictation'] : ['dictation', speechProfile];
+        for (const profile of profiles) {
+          this.requireJob(job.id, owner);
+          this.emit('comparison-progress', { profile, completed: rows.length });
+          try {
+            const capability = await this.apple.probe(profile);
+            this.requireJob(job.id, owner);
+            if (capability.state !== 'ready') throw new Error(capability.reason || 'assets_not_ready');
+            const result = await this.apple.transcribeAudio(audio, { appleProfile: profile, sessionId: job.id, realtime: true });
+            this.requireJob(job.id, owner);
+            if (!result.success) throw new Error(result.error || 'apple_analysis_failed');
+            rows.push({ profile, success: true, text: result.text, duration: result.duration, timings: result.timings });
+          } catch (error) {
+            this.requireJob(job.id, owner);
+            rows.push({ profile, success: false, error: error.message });
+          }
+        }
+        output = { success: rows.every(row => row.success), results: rows, audioSha256: createHash('sha256').update(audio).digest('hex'), speechProfile, first };
+        return output;
+      } finally {
+        // Restore the selected module even after a failed/cancelled comparison.
+        try {
+          await this.apple.cancel(job.id);
+          if (job.generation === this.generation) {
+            const capability = await this.apple.prepare(job.profile);
+            this.state = capability.state; this.reason = capability.reason || null;
+            if (capability.state !== 'ready' && output) { output.success = false; output.restoreError = capability.reason || 'assets_not_ready'; }
+          }
+        } catch (error) {
+          this.state = 'failed'; this.reason = error.message;
+          if (output) { output.success = false; output.restoreError = error.message; }
+        }
+      }
+    })();
+    try { return await job.pending; }
+    finally { await this.end(job.id, owner); }
   }
   async dispose() { this.generation++; await Promise.all([this.adapters.sherpa.dispose(), this.apple.dispose()]); }
 }

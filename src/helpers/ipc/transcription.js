@@ -241,6 +241,22 @@ module.exports = function register(ctx) {
     }
   });
 
+  ipcMain.handle('compare-apple-transcription', async (event, id, options = {}) => {
+    try {
+      const record = ctx.databaseManager.getTranscriptionById(id);
+      if (!record) return { success: false, error: '找不到該筆紀錄' };
+      if (!record.audio_path) return { success: false, error: '這筆沒有保存錄音，請先開啟保存錄音後重新錄製。' };
+      return await withOwner(event, () => ctx.speechEngineManager.compareAppleFilePath(record.audio_path, event.sender.id, options));
+    } catch (error) {
+      // File errors can contain a private path. Return only the fixed reason.
+      return { success: false, error: error.code === 'ENOENT' ? '錄音檔已不存在' : error.code ? 'audio_read_failed' : error.message };
+    }
+  });
+  ipcMain.handle('cancel-apple-comparison', async event => {
+    const job = ctx.speechEngineManager.job;
+    if (job?.comparing && job.owner === event.sender.id) await ctx.speechEngineManager.cancel(job.id, event.sender.id);
+  });
+
   // 重新辨識：用保存的原始錄音重跑，更新該筆文字
   ipcMain.handle("retranscribe-transcription", async (event, id, options = {}) => {
     try {

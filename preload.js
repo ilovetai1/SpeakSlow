@@ -56,6 +56,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // Sherpa 语音识别
   transcribeAudio: (audioData, options) => ipcRenderer.invoke("transcribe-audio", audioData, options),
+  compareAppleTranscription: (id, options) => ipcRenderer.invoke('compare-apple-transcription', id, options),
+  cancelAppleSpeechComparison: () => ipcRenderer.invoke('cancel-apple-comparison'),
+  onSpeechComparisonProgress: callback => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on('speech-comparison-progress', listener);
+    return () => ipcRenderer.removeListener('speech-comparison-progress', listener);
+  },
   checkSherpaStatus: () => ipcRenderer.invoke("check-sherpa-status"),
   restartSherpaServer: () => ipcRenderer.invoke("restart-sherpa-server"),
 

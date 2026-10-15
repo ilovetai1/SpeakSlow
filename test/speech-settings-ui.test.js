@@ -16,3 +16,14 @@ test('Apple/Sherpa controls persist, synchronize, lock busy jobs and explain fai
     assert.equal(stdout.match(/<pre id="test-result">([^<]*)<\/pre>/)?.[1], 'Speech engine UI PASS');
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('same-recording comparison UI locks runs, cancels, preserves raw text and scores a supplied reference', { timeout: 20000 }, () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'speakslow-comparison-ui-'));
+  try {
+    esbuild.buildSync({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import AppleSpeechComparison from './src/components/AppleSpeechComparison'; createRoot(document.getElementById('root')).render(<AppleSpeechComparison recordId={42} onClose={window.comparisonClosed}/>);`, resolveDir: path.resolve(__dirname, '..'), loader: 'jsx' }, outfile: path.join(directory, 'ui.js'), bundle: true, platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' } });
+    const fixture = fs.readFileSync(path.join(__dirname, 'fixtures/apple-comparison-ui.js'), 'utf8');
+    fs.writeFileSync(path.join(directory, 'index.html'), `<div id="root"></div><pre id="test-result"></pre><script>${fixture}</script><script src="./ui.js"></script>`);
+    const stdout = execFileSync(process.env.SPEAKSLOW_TEST_BROWSER || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--no-proxy-server', `--user-data-dir=${path.join(directory, 'profile')}`, '--dump-dom', '--virtual-time-budget=5000', `file://${path.join(directory, 'index.html')}`], { timeout: 17000, maxBuffer: 2 * 1024 * 1024, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    assert.equal(stdout.match(/<pre id="test-result">([^<]*)<\/pre>/)?.[1], 'Apple comparison UI PASS');
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});

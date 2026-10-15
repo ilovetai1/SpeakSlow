@@ -9,6 +9,7 @@ module.exports = function register(ctx) {
     for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed() && win.webContents.id === owner) win.webContents.send(event, data);
   };
   manager.on('preview', data => sendOwner('speech-preview', data));
+  manager.on('comparison-progress', data => sendOwner('speech-comparison-progress', data));
   manager.on('job-error', data => sendOwner('speech-job-error', data));
   ipcMain.handle('speech-engine-state', () => manager.checkState());
   ipcMain.handle('speech-engine-select', async (_event, key, value) => {

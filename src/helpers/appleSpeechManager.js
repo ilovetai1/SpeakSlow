@@ -4,6 +4,7 @@ const { randomUUID } = require('node:crypto');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { performance } = require('node:perf_hooks');
 const { SpeechTranscript } = require('./speechTranscript');
 
 const MAX_MESSAGE = 262144;
@@ -24,9 +25,10 @@ function readWav(value) {
 }
 
 class AppleSpeechManager extends EventEmitter {
-  constructor({ logger, helperPath, platform = process.platform, arch = process.arch, release = os.release(), spawnFn = spawn } = {}) {
+  constructor({ logger, helperPath, platform = process.platform, arch = process.arch, release = os.release(), spawnFn = spawn, clock = () => performance.now(), sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
     super(); this.logger = logger; this.helperPath = helperPath; this.platform = platform; this.arch = arch; this.release = release; this.spawnFn = spawnFn;
     this.pending = new Map(); this.child = null; this.session = null; this.profile = 'accurate'; this.starting = null;
+    this.clock = clock; this.sleep = sleep;
   }
   supportReason() {
     if (this.platform !== 'darwin' || this.arch !== 'arm64' || Number(this.release.split('.')[0]) < 25) return 'platform_unsupported';
@@ -77,6 +79,7 @@ class AppleSpeechManager extends EventEmitter {
       const session = this.session;
       if (!session || session.id !== message.sessionId || session.cancelled) return;
       const result = session.transcript.update(message);
+      if (session.firstTextAt === null && result.text.trim()) session.firstTextAt = this.clock();
       this.emit('preview', { sessionId: session.id, ...result });
       return;
     }
@@ -114,7 +117,7 @@ class AppleSpeechManager extends EventEmitter {
   async start(id, sampleRate, channelCount = 1, profile = 'accurate') {
     if (this.session) throw new Error('speech_busy');
     this.profile = profile; await this.ensureChild();
-    this.session = { id, profile, sampleRate, channelCount, sequence: 0, transcript: new SpeechTranscript(), chain: Promise.resolve(), pendingFrames: 0 };
+    this.session = { id, profile, sampleRate, channelCount, sequence: 0, transcript: new SpeechTranscript(), chain: Promise.resolve(), pendingFrames: 0, firstTextAt: null };
     try { await this.request('start', { sessionId: id, sampleRate, channelCount }); }
     catch (error) { this.session = null; throw error; }
   }
@@ -157,14 +160,30 @@ class AppleSpeechManager extends EventEmitter {
   }
   async transcribeAudio(value, options = {}) {
     const wav = readWav(value); const id = options.sessionId || randomUUID();
+    const prepareAt = this.clock();
     await this.start(id, wav.sampleRate, wav.channelCount, options.appleProfile || 'accurate');
+    const session = this.session, inputAt = this.clock();
+    const durationMs = wav.pcm.length / (wav.sampleRate * wav.channelCount * 2) * 1000;
     try {
       const stride = Math.floor(wav.sampleRate / 10) * wav.channelCount * 2; let sequence = 0;
       for (let offset = 0; offset < wav.pcm.length; offset += stride) {
         const bytes = wav.pcm.subarray(offset, Math.min(offset + stride, wav.pcm.length));
+        if (options.realtime === true) {
+          const due = inputAt + (offset + bytes.length) / (wav.sampleRate * wav.channelCount * 2) * 1000;
+          const delay = due - this.clock();
+          if (delay > 0) await this.sleep(delay);
+        }
         await this.feed(id, { pcm: bytes.toString('base64'), sampleRate: wav.sampleRate, channelCount: wav.channelCount, frames: bytes.length / (wav.channelCount * 2), sequence: sequence++ });
       }
-      return await this.finish(id);
+      const audioEndAt = options.realtime === true ? inputAt + durationMs : this.clock();
+      const result = await this.finish(id), doneAt = this.clock();
+      return { ...result, timings: {
+        prepareMs: inputAt - prepareAt,
+        firstTextMs: session.firstTextAt === null ? null : session.firstTextAt - inputAt,
+        audioEndToFinalMs: Math.max(0, doneAt - audioEndAt),
+        inputToFinalMs: doneAt - inputAt,
+        realtime: options.realtime === true,
+      } };
     } catch (error) { await this.cancel(id).catch(() => {}); throw error; }
   }
   async dispose() {
