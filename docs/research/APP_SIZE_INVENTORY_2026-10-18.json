@@ -1,0 +1,1030 @@
+{
+  "assessedDate": "2026-10-18",
+  "timezone": "Asia/Taipei",
+  "sourceHead": "61494706c1add8e753a33a1133c592d4d3ad4d81",
+  "appPath": "/Applications/SpeakSlow.app",
+  "version": "2.1.0",
+  "method": "Read-only regular-file sizes and st_blocks*512 via lstat; symlinks not followed; ASAR metadata and content comparisons; no build or runtime test.",
+  "app": {
+    "path": "/Applications/SpeakSlow.app",
+    "logicalBytes": 845870498,
+    "allocatedBytes": 847212544,
+    "regularFiles": 538
+  },
+  "parts": [
+    {
+      "path": "/Applications/SpeakSlow.app/Contents/Frameworks",
+      "logicalBytes": 235135506,
+      "allocatedBytes": 235343872,
+      "regularFiles": 96
+    },
+    {
+      "path": "/Applications/SpeakSlow.app/Contents/Resources/sherpa-backend",
+      "logicalBytes": 513057226,
+      "allocatedBytes": 513990656,
+      "regularFiles": 367
+    },
+    {
+      "path": "/Applications/SpeakSlow.app/Contents/Resources/sherpa-backend/poc-sherpa",
+      "logicalBytes": 407452226,
+      "allocatedBytes": 407539712,
+      "regularFiles": 33
+    },
+    {
+      "path": "/Applications/SpeakSlow.app/Contents/Resources/sherpa-backend/_internal",
+      "logicalBytes": 100307608,
+      "allocatedBytes": 101150720,
+      "regularFiles": 333
+    },
+    {
+      "path": "/Applications/SpeakSlow.app/Contents/Resources/sherpa-backend/sherpa_server",
+      "logicalBytes": 5297392,
+      "allocatedBytes": 5300224,
+      "regularFiles": 1
+    },
+    {
+      "path": "/Applications/SpeakSlow.app/Contents/Resources/app.asar",
+      "logicalBytes": 83475668,
+      "allocatedBytes": 83476480,
+      "regularFiles": 1
+    },
+    {
+      "path": "/Applications/SpeakSlow.app/Contents/Resources/app.asar.unpacked",
+      "logicalBytes": 13324246,
+      "allocatedBytes": 13500416,
+      "regularFiles": 66
+    },
+    {
+      "path": "/Applications/SpeakSlow.app/Contents/Resources/apple-speech",
+      "logicalBytes": 270608,
+      "allocatedBytes": 274432,
+      "regularFiles": 1
+    },
+    {
+      "path": "/Applications/SpeakSlow.app/Contents/Resources/context-reader",
+      "logicalBytes": 107792,
+      "allocatedBytes": 110592,
+      "regularFiles": 1
+    }
+  ],
+  "asar": {
+    "headerBytes": 1225640,
+    "fileCount": 4707,
+    "packedByTopLevel": [
+      {
+        "path": "node_modules",
+        "bytes": 41166706
+      },
+      {
+        "path": "src",
+        "bytes": 35456300
+      },
+      {
+        "path": "assets",
+        "bytes": 5593462
+      },
+      {
+        "path": "preload.js",
+        "bytes": 19617
+      },
+      {
+        "path": "main.js",
+        "bytes": 12745
+      },
+      {
+        "path": "package.json",
+        "bytes": 1190
+      }
+    ],
+    "modules": [
+      {
+        "path": "node_modules/lucide-react",
+        "bytes": 23586288
+      },
+      {
+        "path": "node_modules/better-sqlite3",
+        "bytes": 12028405
+      },
+      {
+        "path": "node_modules/react-dom",
+        "bytes": 7318210
+      },
+      {
+        "path": "node_modules/opencc-js",
+        "bytes": 6007493
+      },
+      {
+        "path": "node_modules/uiohook-napi",
+        "bytes": 1183661
+      },
+      {
+        "path": "node_modules/tailwind-merge",
+        "bytes": 876408
+      },
+      {
+        "path": "node_modules/@radix-ui/react-select",
+        "bytes": 343475
+      },
+      {
+        "path": "node_modules/@radix-ui/react-menu",
+        "bytes": 247097
+      },
+      {
+        "path": "node_modules/@floating-ui/core",
+        "bytes": 200151
+      },
+      {
+        "path": "node_modules/react",
+        "bytes": 170356
+      },
+      {
+        "path": "node_modules/@floating-ui/dom",
+        "bytes": 160174
+      },
+      {
+        "path": "node_modules/sonner",
+        "bytes": 158841
+      },
+      {
+        "path": "node_modules/@radix-ui/react-collection",
+        "bytes": 125906
+      },
+      {
+        "path": "node_modules/readable-stream",
+        "bytes": 118674
+      },
+      {
+        "path": "node_modules/@radix-ui/react-dropdown-menu",
+        "bytes": 99398
+      },
+      {
+        "path": "node_modules/@radix-ui/react-dismissable-layer",
+        "bytes": 96780
+      },
+      {
+        "path": "node_modules/@radix-ui/react-dialog",
+        "bytes": 94314
+      },
+      {
+        "path": "node_modules/node-abi",
+        "bytes": 91136
+      },
+      {
+        "path": "node_modules/@radix-ui/react-popper",
+        "bytes": 84932
+      },
+      {
+        "path": "node_modules/scheduler",
+        "bytes": 82215
+      },
+      {
+        "path": "node_modules/@radix-ui/react-roving-focus",
+        "bytes": 70159
+      },
+      {
+        "path": "node_modules/tslib",
+        "bytes": 66813
+      },
+      {
+        "path": "node_modules/@radix-ui/react-focus-scope",
+        "bytes": 64831
+      },
+      {
+        "path": "node_modules/@floating-ui/utils",
+        "bytes": 58688
+      },
+      {
+        "path": "node_modules/react-remove-scroll",
+        "bytes": 56667
+      },
+      {
+        "path": "node_modules/buffer",
+        "bytes": 55181
+      },
+      {
+        "path": "node_modules/@floating-ui/react-dom",
+        "bytes": 53274
+      },
+      {
+        "path": "node_modules/@radix-ui/react-tabs",
+        "bytes": 51085
+      },
+      {
+        "path": "node_modules/@radix-ui/react-presence",
+        "bytes": 50277
+      },
+      {
+        "path": "node_modules/@radix-ui/react-slot",
+        "bytes": 42190
+      },
+      {
+        "path": "node_modules/@radix-ui/react-use-controllable-state",
+        "bytes": 37907
+      },
+      {
+        "path": "node_modules/@radix-ui/react-context",
+        "bytes": 36314
+      },
+      {
+        "path": "node_modules/dotenv",
+        "bytes": 30113
+      },
+      {
+        "path": "node_modules/@radix-ui/react-progress",
+        "bytes": 29429
+      },
+      {
+        "path": "node_modules/use-callback-ref",
+        "bytes": 28313
+      },
+      {
+        "path": "node_modules/use-sidecar",
+        "bytes": 27048
+      },
+      {
+        "path": "node_modules/aria-hidden",
+        "bytes": 22911
+      },
+      {
+        "path": "node_modules/detect-libc",
+        "bytes": 22218
+      },
+      {
+        "path": "node_modules/tar-stream",
+        "bytes": 22000
+      },
+      {
+        "path": "node_modules/@radix-ui/react-primitive",
+        "bytes": 19639
+      },
+      {
+        "path": "node_modules/prebuild-install",
+        "bytes": 19531
+      },
+      {
+        "path": "node_modules/@radix-ui/primitive",
+        "bytes": 19528
+      },
+      {
+        "path": "node_modules/tar-fs",
+        "bytes": 18503
+      },
+      {
+        "path": "node_modules/react-remove-scroll-bar",
+        "bytes": 18049
+      },
+      {
+        "path": "node_modules/tunnel-agent",
+        "bytes": 16566
+      },
+      {
+        "path": "node_modules/@radix-ui/rect",
+        "bytes": 16506
+      },
+      {
+        "path": "node_modules/bl",
+        "bytes": 13547
+      },
+      {
+        "path": "node_modules/react-style-singleton",
+        "bytes": 13437
+      },
+      {
+        "path": "node_modules/@radix-ui/react-focus-guards",
+        "bytes": 13431
+      },
+      {
+        "path": "node_modules/string_decoder",
+        "bytes": 12345
+      },
+      {
+        "path": "node_modules/@radix-ui/react-use-size",
+        "bytes": 12069
+      },
+      {
+        "path": "node_modules/next-themes",
+        "bytes": 11875
+      },
+      {
+        "path": "node_modules/@radix-ui/react-compose-refs",
+        "bytes": 11594
+      },
+      {
+        "path": "node_modules/rc",
+        "bytes": 11499
+      },
+      {
+        "path": "node_modules/@radix-ui/react-visually-hidden",
+        "bytes": 11425
+      },
+      {
+        "path": "node_modules/@radix-ui/react-use-effect-event",
+        "bytes": 11418
+      },
+      {
+        "path": "node_modules/node-gyp-build",
+        "bytes": 11242
+      },
+      {
+        "path": "node_modules/@radix-ui/react-portal",
+        "bytes": 10918
+      },
+      {
+        "path": "node_modules/@radix-ui/react-label",
+        "bytes": 10224
+      },
+      {
+        "path": "node_modules/@radix-ui/react-use-is-hydrated",
+        "bytes": 10066
+      },
+      {
+        "path": "node_modules/@radix-ui/react-arrow",
+        "bytes": 10027
+      },
+      {
+        "path": "node_modules/napi-build-utils",
+        "bytes": 9119
+      },
+      {
+        "path": "node_modules/minimist",
+        "bytes": 8745
+      },
+      {
+        "path": "node_modules/@radix-ui/react-direction",
+        "bytes": 8413
+      },
+      {
+        "path": "node_modules/base64-js",
+        "bytes": 8019
+      },
+      {
+        "path": "node_modules/bindings",
+        "bytes": 7566
+      },
+      {
+        "path": "node_modules/@radix-ui/react-id",
+        "bytes": 7384
+      },
+      {
+        "path": "node_modules/@radix-ui/react-use-rect",
+        "bytes": 7238
+      },
+      {
+        "path": "node_modules/@radix-ui/react-use-callback-ref",
+        "bytes": 6731
+      },
+      {
+        "path": "node_modules/@radix-ui/react-use-previous",
+        "bytes": 6603
+      },
+      {
+        "path": "node_modules/tailwindcss-animate",
+        "bytes": 6574
+      },
+      {
+        "path": "node_modules/decompress-response",
+        "bytes": 6472
+      },
+      {
+        "path": "node_modules/ini",
+        "bytes": 6282
+      },
+      {
+        "path": "node_modules/pump",
+        "bytes": 6212
+      },
+      {
+        "path": "node_modules/@radix-ui/react-use-layout-effect",
+        "bytes": 6202
+      },
+      {
+        "path": "node_modules/simple-get",
+        "bytes": 6200
+      },
+      {
+        "path": "node_modules/deep-extend",
+        "bytes": 6109
+      },
+      {
+        "path": "node_modules/duplex-child-process",
+        "bytes": 5564
+      },
+      {
+        "path": "node_modules/ieee754",
+        "bytes": 4418
+      },
+      {
+        "path": "node_modules/end-of-stream",
+        "bytes": 4351
+      },
+      {
+        "path": "node_modules/mkdirp-classic",
+        "bytes": 4137
+      },
+      {
+        "path": "node_modules/clsx",
+        "bytes": 4069
+      },
+      {
+        "path": "node_modules/expand-template",
+        "bytes": 4038
+      },
+      {
+        "path": "node_modules/@radix-ui/number",
+        "bytes": 4027
+      },
+      {
+        "path": "node_modules/file-uri-to-path",
+        "bytes": 3744
+      },
+      {
+        "path": "node_modules/osascript",
+        "bytes": 3597
+      },
+      {
+        "path": "node_modules/util-deprecate",
+        "bytes": 3559
+      },
+      {
+        "path": "node_modules/safe-buffer",
+        "bytes": 3525
+      },
+      {
+        "path": "node_modules/get-nonce",
+        "bytes": 2712
+      },
+      {
+        "path": "node_modules/simple-concat",
+        "bytes": 2290
+      },
+      {
+        "path": "node_modules/once",
+        "bytes": 2152
+      },
+      {
+        "path": "node_modules/wrappy",
+        "bytes": 2149
+      },
+      {
+        "path": "node_modules/inherits",
+        "bytes": 2146
+      },
+      {
+        "path": "node_modules/detect-node-es",
+        "bytes": 2038
+      },
+      {
+        "path": "node_modules/github-from-package",
+        "bytes": 2001
+      },
+      {
+        "path": "node_modules/fs-constants",
+        "bytes": 1615
+      }
+    ],
+    "rendererRawCandidateBytes": 34535835,
+    "sourceMapBytes": 21010102,
+    "fontFiles": [
+      {
+        "path": "src/dist/assets/GenWanMin2TC-M-Dy0i6F7u.otf",
+        "bytes": 22715524,
+        "unpacked": false
+      },
+      {
+        "path": "src/dist/assets/jf-openhuninn-2.1-BEJueSXx.ttf",
+        "bytes": 4911464,
+        "unpacked": false
+      }
+    ],
+    "identicalDuplicateAssets": [
+      {
+        "path": "assets/demo.gif",
+        "duplicate": "src/dist/demo.gif",
+        "bytes": 3806169
+      },
+      {
+        "path": "assets/icon.icns",
+        "duplicate": "src/dist/icon.icns",
+        "bytes": 294249
+      },
+      {
+        "path": "assets/icon.ico",
+        "duplicate": "src/dist/icon.ico",
+        "bytes": 25980
+      },
+      {
+        "path": "assets/icon.png",
+        "duplicate": "src/dist/icon.png",
+        "bytes": 28912
+      },
+      {
+        "path": "assets/icon.svg",
+        "duplicate": "src/dist/icon.svg",
+        "bytes": 867
+      },
+      {
+        "path": "assets/star-history.png",
+        "duplicate": "src/dist/star-history.png",
+        "bytes": 56733
+      },
+      {
+        "path": "assets/trayTemplate.png",
+        "duplicate": "src/dist/trayTemplate.png",
+        "bytes": 838
+      },
+      {
+        "path": "assets/trayTemplate.svg",
+        "duplicate": "src/dist/trayTemplate.svg",
+        "bytes": 464
+      },
+      {
+        "path": "assets/trayTemplate@2x.png",
+        "duplicate": "src/dist/trayTemplate@2x.png",
+        "bytes": 1050
+      },
+      {
+        "path": "assets/usage-dashboard.jpg",
+        "duplicate": "src/dist/usage-dashboard.jpg",
+        "bytes": 36402
+      },
+      {
+        "path": "assets/usage-history.jpg",
+        "duplicate": "src/dist/usage-history.jpg",
+        "bytes": 40250
+      },
+      {
+        "path": "assets/wechat-community-qrcode.png",
+        "duplicate": "src/dist/wechat-community-qrcode.png",
+        "bytes": 24956
+      },
+      {
+        "path": "assets/logo-build/gen_logo.py",
+        "duplicate": "src/dist/logo-build/gen_logo.py",
+        "bytes": 1259
+      },
+      {
+        "path": "assets/logo-build/gen_og.py",
+        "duplicate": "src/dist/logo-build/gen_og.py",
+        "bytes": 1949
+      },
+      {
+        "path": "assets/logo-build/icon-1024.png",
+        "duplicate": "src/dist/logo-build/icon-1024.png",
+        "bytes": 120391
+      },
+      {
+        "path": "assets/logo-build/preview.png",
+        "duplicate": "src/dist/logo-build/preview.png",
+        "bytes": 99770
+      },
+      {
+        "path": "assets/logo-build/speakslow-logo-v2-chroma.png",
+        "duplicate": "src/dist/logo-build/speakslow-logo-v2-chroma.png",
+        "bytes": 1053223
+      }
+    ],
+    "identicalDuplicateAssetBytes": 5593462
+  },
+  "locales": {
+    "keepCandidate": [
+      "en.lproj",
+      "en_GB.lproj",
+      "zh_CN.lproj",
+      "zh_TW.lproj"
+    ],
+    "all": [
+      {
+        "name": "af.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/af.lproj",
+        "logicalBytes": 504970,
+        "allocatedBytes": 507904,
+        "regularFiles": 1
+      },
+      {
+        "name": "am.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/am.lproj",
+        "logicalBytes": 818553,
+        "allocatedBytes": 819200,
+        "regularFiles": 1
+      },
+      {
+        "name": "ar.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/ar.lproj",
+        "logicalBytes": 893569,
+        "allocatedBytes": 897024,
+        "regularFiles": 1
+      },
+      {
+        "name": "bg.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/bg.lproj",
+        "logicalBytes": 933866,
+        "allocatedBytes": 933888,
+        "regularFiles": 1
+      },
+      {
+        "name": "bn.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/bn.lproj",
+        "logicalBytes": 1201756,
+        "allocatedBytes": 1204224,
+        "regularFiles": 1
+      },
+      {
+        "name": "ca.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/ca.lproj",
+        "logicalBytes": 567970,
+        "allocatedBytes": 569344,
+        "regularFiles": 1
+      },
+      {
+        "name": "cs.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/cs.lproj",
+        "logicalBytes": 584442,
+        "allocatedBytes": 585728,
+        "regularFiles": 1
+      },
+      {
+        "name": "da.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/da.lproj",
+        "logicalBytes": 529263,
+        "allocatedBytes": 532480,
+        "regularFiles": 1
+      },
+      {
+        "name": "de.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/de.lproj",
+        "logicalBytes": 564638,
+        "allocatedBytes": 565248,
+        "regularFiles": 1
+      },
+      {
+        "name": "el.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/el.lproj",
+        "logicalBytes": 1023260,
+        "allocatedBytes": 1024000,
+        "regularFiles": 1
+      },
+      {
+        "name": "en.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/en.lproj",
+        "logicalBytes": 464610,
+        "allocatedBytes": 466944,
+        "regularFiles": 1
+      },
+      {
+        "name": "en_GB.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/en_GB.lproj",
+        "logicalBytes": 460492,
+        "allocatedBytes": 462848,
+        "regularFiles": 1
+      },
+      {
+        "name": "es.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/es.lproj",
+        "logicalBytes": 558891,
+        "allocatedBytes": 561152,
+        "regularFiles": 1
+      },
+      {
+        "name": "es_419.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/es_419.lproj",
+        "logicalBytes": 559534,
+        "allocatedBytes": 561152,
+        "regularFiles": 1
+      },
+      {
+        "name": "et.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/et.lproj",
+        "logicalBytes": 508961,
+        "allocatedBytes": 512000,
+        "regularFiles": 1
+      },
+      {
+        "name": "fa.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/fa.lproj",
+        "logicalBytes": 831135,
+        "allocatedBytes": 831488,
+        "regularFiles": 1
+      },
+      {
+        "name": "fi.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/fi.lproj",
+        "logicalBytes": 519326,
+        "allocatedBytes": 520192,
+        "regularFiles": 1
+      },
+      {
+        "name": "fil.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/fil.lproj",
+        "logicalBytes": 586684,
+        "allocatedBytes": 589824,
+        "regularFiles": 1
+      },
+      {
+        "name": "fr.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/fr.lproj",
+        "logicalBytes": 603793,
+        "allocatedBytes": 606208,
+        "regularFiles": 1
+      },
+      {
+        "name": "gu.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/gu.lproj",
+        "logicalBytes": 1181186,
+        "allocatedBytes": 1183744,
+        "regularFiles": 1
+      },
+      {
+        "name": "he.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/he.lproj",
+        "logicalBytes": 728311,
+        "allocatedBytes": 729088,
+        "regularFiles": 1
+      },
+      {
+        "name": "hi.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/hi.lproj",
+        "logicalBytes": 1246273,
+        "allocatedBytes": 1249280,
+        "regularFiles": 1
+      },
+      {
+        "name": "hr.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/hr.lproj",
+        "logicalBytes": 563437,
+        "allocatedBytes": 565248,
+        "regularFiles": 1
+      },
+      {
+        "name": "hu.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/hu.lproj",
+        "logicalBytes": 607927,
+        "allocatedBytes": 610304,
+        "regularFiles": 1
+      },
+      {
+        "name": "id.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/id.lproj",
+        "logicalBytes": 502909,
+        "allocatedBytes": 503808,
+        "regularFiles": 1
+      },
+      {
+        "name": "it.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/it.lproj",
+        "logicalBytes": 551047,
+        "allocatedBytes": 552960,
+        "regularFiles": 1
+      },
+      {
+        "name": "ja.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/ja.lproj",
+        "logicalBytes": 672471,
+        "allocatedBytes": 675840,
+        "regularFiles": 1
+      },
+      {
+        "name": "kn.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/kn.lproj",
+        "logicalBytes": 1353665,
+        "allocatedBytes": 1355776,
+        "regularFiles": 1
+      },
+      {
+        "name": "ko.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/ko.lproj",
+        "logicalBytes": 567888,
+        "allocatedBytes": 569344,
+        "regularFiles": 1
+      },
+      {
+        "name": "lt.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/lt.lproj",
+        "logicalBytes": 610928,
+        "allocatedBytes": 614400,
+        "regularFiles": 1
+      },
+      {
+        "name": "lv.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/lv.lproj",
+        "logicalBytes": 610133,
+        "allocatedBytes": 610304,
+        "regularFiles": 1
+      },
+      {
+        "name": "ml.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/ml.lproj",
+        "logicalBytes": 1409920,
+        "allocatedBytes": 1413120,
+        "regularFiles": 1
+      },
+      {
+        "name": "mr.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/mr.lproj",
+        "logicalBytes": 1159109,
+        "allocatedBytes": 1159168,
+        "regularFiles": 1
+      },
+      {
+        "name": "ms.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/ms.lproj",
+        "logicalBytes": 527144,
+        "allocatedBytes": 528384,
+        "regularFiles": 1
+      },
+      {
+        "name": "nb.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/nb.lproj",
+        "logicalBytes": 509390,
+        "allocatedBytes": 512000,
+        "regularFiles": 1
+      },
+      {
+        "name": "nl.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/nl.lproj",
+        "logicalBytes": 527046,
+        "allocatedBytes": 528384,
+        "regularFiles": 1
+      },
+      {
+        "name": "pl.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/pl.lproj",
+        "logicalBytes": 586952,
+        "allocatedBytes": 589824,
+        "regularFiles": 1
+      },
+      {
+        "name": "pt_BR.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/pt_BR.lproj",
+        "logicalBytes": 551828,
+        "allocatedBytes": 552960,
+        "regularFiles": 1
+      },
+      {
+        "name": "pt_PT.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/pt_PT.lproj",
+        "logicalBytes": 555900,
+        "allocatedBytes": 557056,
+        "regularFiles": 1
+      },
+      {
+        "name": "ro.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/ro.lproj",
+        "logicalBytes": 575150,
+        "allocatedBytes": 577536,
+        "regularFiles": 1
+      },
+      {
+        "name": "ru.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/ru.lproj",
+        "logicalBytes": 943504,
+        "allocatedBytes": 946176,
+        "regularFiles": 1
+      },
+      {
+        "name": "sk.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/sk.lproj",
+        "logicalBytes": 593379,
+        "allocatedBytes": 593920,
+        "regularFiles": 1
+      },
+      {
+        "name": "sl.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/sl.lproj",
+        "logicalBytes": 569009,
+        "allocatedBytes": 569344,
+        "regularFiles": 1
+      },
+      {
+        "name": "sr.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/sr.lproj",
+        "logicalBytes": 877312,
+        "allocatedBytes": 880640,
+        "regularFiles": 1
+      },
+      {
+        "name": "sv.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/sv.lproj",
+        "logicalBytes": 512430,
+        "allocatedBytes": 516096,
+        "regularFiles": 1
+      },
+      {
+        "name": "sw.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/sw.lproj",
+        "logicalBytes": 542180,
+        "allocatedBytes": 544768,
+        "regularFiles": 1
+      },
+      {
+        "name": "ta.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/ta.lproj",
+        "logicalBytes": 1402736,
+        "allocatedBytes": 1404928,
+        "regularFiles": 1
+      },
+      {
+        "name": "te.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/te.lproj",
+        "logicalBytes": 1292777,
+        "allocatedBytes": 1294336,
+        "regularFiles": 1
+      },
+      {
+        "name": "th.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/th.lproj",
+        "logicalBytes": 1084036,
+        "allocatedBytes": 1085440,
+        "regularFiles": 1
+      },
+      {
+        "name": "tr.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/tr.lproj",
+        "logicalBytes": 552328,
+        "allocatedBytes": 552960,
+        "regularFiles": 1
+      },
+      {
+        "name": "uk.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/uk.lproj",
+        "logicalBytes": 944617,
+        "allocatedBytes": 946176,
+        "regularFiles": 1
+      },
+      {
+        "name": "ur.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/ur.lproj",
+        "logicalBytes": 825385,
+        "allocatedBytes": 827392,
+        "regularFiles": 1
+      },
+      {
+        "name": "vi.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/vi.lproj",
+        "logicalBytes": 653801,
+        "allocatedBytes": 655360,
+        "regularFiles": 1
+      },
+      {
+        "name": "zh_CN.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/zh_CN.lproj",
+        "logicalBytes": 471268,
+        "allocatedBytes": 475136,
+        "regularFiles": 1
+      },
+      {
+        "name": "zh_TW.lproj",
+        "path": "/Applications/SpeakSlow.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/zh_TW.lproj",
+        "logicalBytes": 465779,
+        "allocatedBytes": 466944,
+        "regularFiles": 1
+      }
+    ],
+    "excludedCandidateLogicalBytes": 38182719,
+    "excludedCandidateAllocatedBytes": 38277120
+  },
+  "architectures": {
+    "thinCounts": {
+      "arm64": 105,
+      "x86_64": 1
+    },
+    "extraArchitectureFiles": [
+      {
+        "path": "Contents/Resources/app.asar.unpacked/node_modules/uiohook-napi/prebuilds/darwin-x64/uiohook-napi.node",
+        "bytes": 58936,
+        "arch": "x86_64"
+      }
+    ],
+    "fatBinaries": []
+  },
+  "sourceMatches": [
+    {
+      "path": "main.js",
+      "sha256": "053d1700c6f3ecd7edea13a68587c88c88cd227b1707559b40f50c7b8b75ae7f",
+      "matchesInstalled": true
+    },
+    {
+      "path": "src/helpers/speechEngineManager.js",
+      "sha256": "69fe331b312b3453145311046898fcdbe24d4aff1c09fa680ba4356bfc1c0e97",
+      "matchesInstalled": true
+    },
+    {
+      "path": "src/helpers/sherpaManager.js",
+      "sha256": "75283ea57a84a0b21ab1a82d85b07104c6d32d9c8c2e2fb35dddc5f9ac59049d",
+      "matchesInstalled": true
+    },
+    {
+      "path": "src/helpers/textUtilityService.js",
+      "sha256": "9c8218920a444d7a4b24ff85ba23fd217eaf7376650a17f3d577028cc8b95c3b",
+      "matchesInstalled": true
+    }
+  ],
+  "buildToolVersions": {
+    "electronBuilder": "24.13.3",
+    "asar": "3.4.1"
+  },
+  "limitations": [
+    "No app-user-data or Apple system model storage measured.",
+    "ASAR payload bytes overlap candidate subsets; do not add renderer dependencies and source maps.",
+    "No reduced build, signing, launch or functional acceptance performed."
+  ]
+}
