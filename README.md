@@ -212,6 +212,16 @@ macOS 的 `build:renderer` 會先編譯 context reader 與 Apple speech helper�
 
 macOS 預設打包未配置 Developer ID 發佈簽章／公證；完成打包不代表可直接供所有同仁安裝。一般分支 push 也不會觸發現有 macOS／Linux 發佈工作流程，其觸發條件為手動執行或 `v*` tag。
 
+### macOS 本機開發安裝
+
+先結束 SpeakSlow，再執行 `npm run build:install:mac`。這會依序重建後端、前端與 arm64 App，以 ad-hoc 簽章安裝至 `/Applications/SpeakSlow.app`；此流程不代表 Developer ID 發行簽章或公證。
+
+已有建置成品時，使用 `npm run install:mac -- --identity -`；預設來源為專案內 `dist/mac-arm64/SpeakSlow.app`。自訂輸出位置時，以 `--source` 指定專案內成品的絕對路徑。已完成簽章的成品可省略 `--identity`，安裝器仍會驗證簽章。
+
+安裝器會先檢查所有待清理副本的識別碼、Git 追蹤狀態及執行中程序，再複製至暫存位置，比對內容與簽章後才替換。替換完成並驗證成功後，會永久移除專案內完整的 `SpeakSlow.app` 建置副本，保留 DMG／ZIP；不建立舊版 App 備份。驗證失敗會明示錯誤並保留來源成品。
+
+只需清理既有建置副本時，執行 `npm run install:mac -- --cleanup-only`。此模式先驗證 `/Applications/SpeakSlow.app`，並以清理前後內容雜湊確認它未變更；正在執行或 Git 追蹤的建置副本會阻止清理。`node_modules`、Python 環境、模型與其他 App 不在清理範圍。macOS 儲存空間清單依賴系統索引，畫面更新可能稍晚。
+
 ### 驗證
 
 ```bash

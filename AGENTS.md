@@ -25,6 +25,8 @@
 - `/Applications/SpeakSlow.app` 是唯一允许保留的已安装应用程式副本。
 - 更新或重新安装时直接替换旧的 `/Applications/SpeakSlow.app`；不得建立或保留 `SpeakSlow.app.backup-*`、`.old`、带时间戳或编号的旧应用程式副本。
 - 安装完成后必须检查 `/Applications`，确认只剩 `/Applications/SpeakSlow.app`，并永久删除此次操作产生的旧应用程式档案。
+- 本机安装统一使用 `npm run install:mac`（完整重建与 ad-hoc 安装用 `npm run build:install:mac`）；签章、替换、项目内 `.app` 清理与失败处理见 `scripts/install-mac.mjs`，安装步骤见 `README.md` 的「macOS 本機開發安裝」。
+- 安装验收须同时扫描项目目录及 Spotlight：项目内不得留下完整 `SpeakSlow.app`；保留 DMG／ZIP 安装档。只有新安装副本验证通过后才删除建置副本，失败时保留来源并明确报错。
 
 ## 关键架构模式
 

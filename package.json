@@ -21,7 +21,9 @@
     "clean": "node cleanup.js && rm -rf python",
     "build:context": "node scripts/build-context-helper.mjs",
     "build:apple": "node scripts/build-apple-speech.mjs",
-    "build:mac": "npm run build:backend && npm run build:renderer && electron-builder --mac"
+    "build:mac": "npm run build:backend && npm run build:renderer && electron-builder --mac",
+    "install:mac": "node scripts/install-mac.mjs",
+    "build:install:mac": "npm run build:mac -- --publish never && npm run install:mac -- --identity -"
   },
   "electronmon": {
     "patterns": [
