@@ -1,6 +1,7 @@
 const { BrowserWindow, app } = require("electron");
 const { performance } = require("node:perf_hooks");
 const path = require("path");
+const { readIndicatorVisibility, createIndicatorVisibilityMonitor } = require('./indicatorVisibility');
 const {
   INDICATOR_WIDTH,
   INDICATOR_HEIGHT,
@@ -13,6 +14,8 @@ class WindowManager {
     this.logger = logger;
     this._indicatorReady = null;
     this._indicatorShowSequence = 0;
+    this._indicatorRequestedVisible = false;
+    this._indicatorDisplayRevision = 0;
     this.databaseManager = databaseManager;
     this.mainWindow = null;
     this.controlPanelWindow = null;
@@ -27,6 +30,12 @@ class WindowManager {
     this.isMini = false; // 視窗目前是否為迷你尺寸（渲染端重載後用來重新同步）
     this.commandMode = false; // 操作模式（主行程鏡像，給錄音指示器藥丸用）
     this._userOpacity = 1; // 使用者設定的視窗透明度（迷你變形時要還原成這個，而非寫死 1）
+    this._indicatorVisibility = process.platform === 'darwin'
+      ? createIndicatorVisibilityMonitor({
+        readVisible: () => readIndicatorVisibility(this.typelessIndicatorWindow),
+        recover: (attempt, current) => this._recoverIndicatorVisibility(attempt, current),
+        reportError: error => this.reportIndicatorError(error),
+      }) : null;
 
     // macOS 依使用者目前的滑鼠螢幕定位，不查詢鍵盤焦點視窗。
     this._typelessIndicatorPositioner = createIndicatorPositioner({
@@ -439,6 +448,15 @@ class WindowManager {
     }
 
     const { screen } = require("electron");
+    // WindowManager itself is constructed before app.ready; screen is only
+    // available when creating windows, so attach display listeners here.
+    if (process.platform === 'darwin' && !this._indicatorDisplayChanged) {
+      this._indicatorDisplayChanged = () => {
+        this._resetIndicatorForDisplayChange().catch(error => this.reportIndicatorError(error));
+      };
+      screen.on?.('display-removed', this._indicatorDisplayChanged);
+      screen.on?.('display-added', this._indicatorDisplayChanged);
+    }
     const { workArea } = process.platform === "darwin"
       ? screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
       : screen.getPrimaryDisplay();
@@ -520,6 +538,40 @@ class WindowManager {
     }
   }
 
+  _recoverIndicatorVisibility(attempt, current) {
+    if (!current()) return;
+    const win = this.typelessIndicatorWindow;
+    this.logger?.warn('macOS 錄音指示器不可見，嘗試恢復', { attempt });
+    if (attempt === 1 && win && !win.isDestroyed()) {
+      // Reapply Space membership without changing the app's Dock policy or focus.
+      win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+      if (win.isMinimized()) win.restore();
+      win.hide();
+      win.showInactive();
+    } else {
+      // A stale native panel can survive repeated recordings. Recreate it once,
+      // preserving the normal loading, cursor placement and stop-cancellation path.
+      if (win && !win.isDestroyed()) win.destroy();
+      if (current()) this.showTypelessIndicator();
+    }
+  }
+
+  async _resetIndicatorForDisplayChange() {
+    const revision = ++this._indicatorDisplayRevision;
+    ++this._indicatorShowSequence;
+    this._typelessIndicatorPositioner.notifyHidden();
+    this._indicatorVisibility?.stop();
+    // Let an in-flight load settle before destroying its native window. Its caller
+    // owns load errors; this path only invalidates placement on the old topology.
+    if (this._indicatorReady) {
+      try { await this._indicatorReady; } catch { /* reported by the show caller */ }
+    }
+    if (revision !== this._indicatorDisplayRevision) return;
+    const win = this.typelessIndicatorWindow;
+    if (win && !win.isDestroyed()) win.destroy();
+    if (this._indicatorRequestedVisible) this.showTypelessIndicator();
+  }
+
   // 迷你模式：主面板「原地變身」成扁平媒體浮窗（同一個視窗，只改大小位置）。
   // 重要：主視窗是 resizable:false，Windows 會忽略 setBounds 的尺寸但照樣移動位置
   // （v1 因此把視窗移出螢幕外「消失」）。必須先暫時開啟 resizable 再改 bounds。
@@ -594,6 +646,7 @@ class WindowManager {
   }
 
   showTypelessIndicator() {
+    this._indicatorRequestedVisible = true;
     const sequence = ++this._indicatorShowSequence;
     // 共用載入 promise：快速重複開始不會提早顯示尚未載入的空白視窗。
     const ready = this.createTypelessIndicatorWindow();
@@ -606,7 +659,8 @@ class WindowManager {
         if (position) win.setPosition(position.x, position.y);
         win.webContents.send("command-mode-changed", this.commandMode);
         win.showInactive();
-        this.logger?.info("錄音指示器已顯示", { position, cursor: meta?.cursor, displayId: meta?.displayId });
+        this._indicatorVisibility?.start();
+        this.logger?.info("已要求顯示錄音指示器", { position, cursor: meta?.cursor, displayId: meta?.displayId });
       } catch (error) {
         // 載入失敗由 ready.catch 回報，其他視窗操作錯誤在此回報。
         if (this.typelessIndicatorWindow) this.reportIndicatorError(error);
@@ -620,6 +674,8 @@ class WindowManager {
   }
 
   hideTypelessIndicator() {
+    this._indicatorRequestedVisible = false;
+    this._indicatorVisibility?.stop();
     ++this._indicatorShowSequence;
     this.logger?.info("錄音指示器已隱藏");
     // 停止滑鼠位置查詢，並讓載入中的舊定位結果失效。
@@ -630,6 +686,9 @@ class WindowManager {
   }
 
   closeTypelessIndicator() {
+    this._indicatorRequestedVisible = false;
+    ++this._indicatorDisplayRevision;
+    this._indicatorVisibility?.stop();
     ++this._indicatorShowSequence;
     this._typelessIndicatorPositioner.notifyHidden();
     if (this.typelessIndicatorWindow && !this.typelessIndicatorWindow.isDestroyed()) {
@@ -639,6 +698,14 @@ class WindowManager {
   }
 
   closeAllWindows() {
+    this._indicatorRequestedVisible = false;
+    ++this._indicatorDisplayRevision;
+    this._indicatorVisibility?.stop();
+    if (this._indicatorDisplayChanged) {
+      const { screen } = require('electron');
+      screen.removeListener('display-removed', this._indicatorDisplayChanged);
+      screen.removeListener('display-added', this._indicatorDisplayChanged);
+    }
     if (this.mainWindow) {
       this.mainWindow.close();
     }

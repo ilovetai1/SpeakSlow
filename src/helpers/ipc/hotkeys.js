@@ -5,6 +5,31 @@ const TYPELESS_ACTION_ID = 'typeless-recording';
 const HOTKEY_ENABLED_SETTING = 'hotkey_enabled';
 
 module.exports = function register(ctx) {
+  const recordingJob = () => {
+    const job = ctx.speechEngineManager?.job;
+    return job && ['recording', 'streaming'].includes(job.kind) ? job : null;
+  };
+  const sendRecordingEvent = channel => {
+    const job = recordingJob();
+    const target = job
+      ? BrowserWindow.getAllWindows().find(win => !win.isDestroyed() && win.webContents.id === job.owner)
+      : ctx.windowManager?.mainWindow;
+    if (!target || target.isDestroyed()) {
+      ctx.logger.error('無法傳送錄音事件：錄音視窗不存在', { channel });
+      return;
+    }
+    target.webContents.send(channel);
+  };
+  // A second App is mounted in the hidden control panel. Its idle state must
+  // not overwrite the owner. Retain the owner for the final false after release.
+  let recordingStateOwner = null;
+  const acceptsRecordingState = (event, isRecording) => {
+    const job = recordingJob();
+    if (job) recordingStateOwner = job.owner;
+    if (isRecording && !job) return false;
+    const owner = recordingStateOwner ?? ctx.windowManager?.mainWindow?.webContents.id;
+    return owner !== undefined && event?.sender?.id === owner;
+  };
   const getDefaultEnabledStates = () => ({
     [TYPELESS_ACTION_ID]: true,
     ...Object.fromEntries(
@@ -192,6 +217,7 @@ module.exports = function register(ctx) {
 
   ipcMain.handle("set-recording-state", (event, isRecording) => {
     try {
+      if (!acceptsRecordingState(event, isRecording)) return { success: true, ignored: true };
       if (ctx.hotkeyManager) {
         ctx.hotkeyManager.setRecordingState(isRecording);
         return { success: true };
@@ -245,17 +271,12 @@ module.exports = function register(ctx) {
           } catch (err) {
             ctx.logger.warn('TypeLess: 儲存前景視窗失敗:', err.message);
           }
-          // 發送開始錄音事件到渲染進程
-          require("electron").BrowserWindow.getAllWindows().forEach((w) => {
-            if (!w.isDestroyed()) w.webContents.send("typeless-start-recording");
-          });
+          // Only one renderer may start a job. Broadcasting races the hidden App.
+          sendRecordingEvent("typeless-start-recording");
         },
         onStopRecording: () => {
           ctx.logger.info('TypeLess: 觸發停止錄音');
-          // 發送停止錄音事件到渲染進程
-          require("electron").BrowserWindow.getAllWindows().forEach((w) => {
-            if (!w.isDestroyed()) w.webContents.send("typeless-stop-recording");
-          });
+          sendRecordingEvent("typeless-stop-recording");
         },
         onCancelRecording: () => {
           ctx.logger.info('TypeLess: 觸發取消錄音 (Esc)');
@@ -265,9 +286,7 @@ module.exports = function register(ctx) {
             if (!w.isDestroyed()) w.webContents.send("tts-stop");
           });
           // 發送取消錄音事件到渲染進程（丟棄音訊、不轉錄、不貼上）
-          require("electron").BrowserWindow.getAllWindows().forEach((w) => {
-            if (!w.isDestroyed()) w.webContents.send("typeless-cancel-recording");
-          });
+          sendRecordingEvent("typeless-cancel-recording");
         }
       });
 
@@ -323,6 +342,7 @@ module.exports = function register(ctx) {
   // 同步真實錄音狀態給 TypeLess（避免快捷鍵切換與滑鼠點擊狀態打架）
   ipcMain.handle("sync-typeless-state", (event, isRecording) => {
     try {
+      if (!acceptsRecordingState(event, isRecording)) return { success: true, ignored: true };
       if (ctx.typelessManager) {
         ctx.typelessManager.syncActiveState(isRecording);
       }

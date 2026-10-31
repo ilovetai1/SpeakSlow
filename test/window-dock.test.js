@@ -20,7 +20,7 @@ function fixture(platform = 'darwin') {
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(path.resolve('src/helpers/windowManager.js'), 'utf8'), {
     module, __dirname: path.resolve('src/helpers'), process: { platform, env: {} },
-    require: name => name === 'electron' ? { BrowserWindow: Window, app: { dock }, screen: { on() {} } } : name === 'node:perf_hooks' ? { performance: { now: () => now } } : name === './indicatorPlacement' ? require('../src/helpers/indicatorPlacement') : require(name),
+    require: name => name === 'electron' ? { BrowserWindow: Window, app: { dock }, screen: { on() {} } } : name === 'node:perf_hooks' ? { performance: { now: () => now } } : name.startsWith('./') ? require(path.resolve('src/helpers', name)) : require(name),
     setTimeout: (fn, ms) => { timers.set(++timerId, { fn, at: now + ms }); return timerId; },
     clearTimeout: id => timers.delete(id), console,
   });

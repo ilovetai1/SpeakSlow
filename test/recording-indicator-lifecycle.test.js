@@ -37,6 +37,12 @@ async function withHarness(run, { load } = {}) {
       getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1000, height: 1000 } }),
     },
   };
+  let appReady = false;
+  const screen = electron.screen;
+  Object.defineProperty(electron, 'screen', { get() {
+    assert.ok(appReady, 'WindowManager is constructed before app.ready; screen must not be accessed yet');
+    return screen;
+  } });
   const originalLoad = Module._load;
   Module._load = function (name, ...args) {
     if (name === 'electron') return electron;
@@ -49,26 +55,28 @@ async function withHarness(run, { load } = {}) {
     }
     const WindowManager = require('../src/helpers/windowManager');
     manager = new WindowManager(null, { info() {}, warn() {}, error: (...args) => errors.push(args) });
+    appReady = true;
     manager._typelessIndicatorPositioner = {
       requestShow: callback => callback({ x: 200, y: 800 }, { stillCurrent: () => true }),
       notifyHidden() {},
     };
     require('../src/helpers/ipc/hotkeys')({
       windowManager: manager,
+      speechEngineManager: { job: { kind: 'recording', owner: 1 } },
       typelessManager: { syncActiveState() {} },
       logger: { info() {}, warn() {}, error() {} },
     });
     await run({ manager, windows, handlers, errors });
-  } finally { Module._load = originalLoad; }
+  } finally { manager?.hideTypelessIndicator(); Module._load = originalLoad; }
 }
 
 test('renderer 確認麥克風正在錄音時，指示器必須同步顯示；停止時同步隱藏', async () => {
   await withHarness(async h => {
-    await h.handlers.get('sync-typeless-state')(null, true);
+    await h.handlers.get('sync-typeless-state')({ sender: { id: 1 } }, true);
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(h.manager.typelessIndicatorWindow?.visible, true,
       '實際錄音狀態為 true，卻未顯示錄音指示器');
-    await h.handlers.get('sync-typeless-state')(null, false);
+    await h.handlers.get('sync-typeless-state')({ sender: { id: 1 } }, false);
     assert.equal(h.manager.typelessIndicatorWindow.visible, false);
   });
 });
