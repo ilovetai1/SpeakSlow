@@ -17,7 +17,7 @@ module.exports = function register(ctx) {
   ipcMain.handle('calibrate-context-budget', () => ctx.aiProcessor.calibrateContextBudget());
   // AI文本处理（實作在 aiTextProcessor.js）
   ipcMain.handle("process-text", async (event, text, mode = 'optimize', options = {}) => {
-    return withOwnerSignal(event, signal => ctx.aiProcessor.processTextWithAI(text, mode, null, { workflow: options.workflow, scopeHandle: options.scopeHandle, metricId: options.metricId, profile: options.profile, requireEnabled: true, signal }));
+    return withOwnerSignal(event, signal => ctx.aiProcessor.processTextWithAI(text, mode, null, { workflow: options.workflow, scopeHandle: options.scopeHandle, metricId: options.metricId, profile: options.profile, expectedProvider: options.expectedProvider, requireEnabled: true, signal }));
   });
 
   ipcMain.handle('preview-file-polish', async (event, text) => {

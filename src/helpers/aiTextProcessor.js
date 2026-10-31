@@ -20,6 +20,11 @@ const PROVIDERS = Object.freeze({
   gemini: { adapter: 'openAICompatible', local: false, latency: 'openai_compatible' },
   custom: { adapter: 'openAICompatible', local: false, latency: 'openai_compatible' },
 });
+const APPLE_TIMING_STAGES = Object.freeze({
+  capabilityMs: 'apple_capability',
+  tokenCountMs: 'apple_token_count',
+  responseCompleteMs: 'apple_response_complete',
+});
 
 function providerDefinition(provider) {
   if (typeof provider !== 'string' || !Object.hasOwn(PROVIDERS, provider)) {
@@ -204,7 +209,7 @@ class AITextProcessor {
     ];
   }
 
-  async processTextWithAI(text, mode = "optimize", customPrompt = null, { requireEnabled = false, workflow, scopeHandle, metricId, profile: selectedProfile, signal } = {}) {
+  async processTextWithAI(text, mode = "optimize", customPrompt = null, { requireEnabled = false, workflow, scopeHandle, metricId, profile: selectedProfile, signal, expectedProvider } = {}) {
     const startedAt = Date.now();
     let usedExternalContext = false;
     const controller = new AbortController();
@@ -217,6 +222,9 @@ class AITextProcessor {
         return { success: false, code: 'polishing_disabled', error: 'AI 潤稿已關閉' };
       }
       const config = await this._loadConfig();
+      if (expectedProvider && config.provider !== expectedProvider) {
+        return { success: false, code: 'provider_changed', error: 'AI 服務已變更', cancelled: true };
+      }
       if (config.provider === "ollama" && !customPrompt && (mode === "optimize" || mode === "optimize_long") && [...text].length > MAX_TRANSCRIPT_CHARS) {
         return {
           success: false,
@@ -279,6 +287,24 @@ class AITextProcessor {
         signal: requestSignal,
         ...(usedExternalContext ? { maxOutputTokens: 512 } : {}),
       });
+      const { nativeTimings, ...publicResult } = result;
+      if (config.provider === 'apple_on_device') {
+        try {
+          for (const [field, stage] of Object.entries(APPLE_TIMING_STAGES)) {
+            const duration = nativeTimings?.[field];
+            if (Number.isFinite(duration) && duration >= 0 && duration <= 60000) {
+              this.latencyManager?.record?.(metricId, stage, 'success', duration);
+            }
+          }
+          this.latencyManager?.recordUsage?.(
+            metricId,
+            publicResult.usage?.input_tokens,
+            publicResult.usage?.output_tokens,
+          );
+        } catch {
+          this.logger.warn('Apple latency telemetry unavailable', { code: 'metrics_invalid' });
+        }
+      }
 
       if (this.stopping) {
         return {
@@ -292,12 +318,12 @@ class AITextProcessor {
       requestSignal.throwIfAborted();
 
       const providerMetadata = { provider: config.provider, local: PROVIDERS[config.provider].local };
-      if (!result.success) return { ...result, ...providerMetadata };
-      const finalText = this._stripAIPreamble(result.text);
+      if (!publicResult.success) return { ...publicResult, ...providerMetadata };
+      const finalText = this._stripAIPreamble(publicResult.text);
       if (!finalText) {
         return { success: false, error: "AI 未回傳可用文字", code: "invalid_response" };
       }
-      return { ...result, ...providerMetadata, text: finalText, contextStatus, writingProfile: profile };
+      return { ...publicResult, ...providerMetadata, text: finalText, contextStatus, writingProfile: profile };
     } catch (error) {
       if (this.stopping) {
         return {

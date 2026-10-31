@@ -1,4 +1,4 @@
-const { AppleFoundationModelsManager, ERROR_CODES, nativeError } = require('./appleFoundationModelsManager');
+const { AppleFoundationModelsManager, ERROR_CODES, nativeError, safeNativeTimings } = require('./appleFoundationModelsManager');
 
 const MESSAGES = {
   platform_unsupported: 'Apple 本機潤稿需要 macOS 27 與 Apple Silicon',
@@ -61,12 +61,15 @@ class AppleOnDeviceAdapter {
       const request = requestText(messages);
       const result = await this.manager.generate({ ...request, locale: 'zh-TW', timeoutMs, signal, maxOutputTokens });
       if (signal?.aborted) throw nativeError('cancelled');
+      const nativeTimings = safeNativeTimings(result.nativeTimings || result);
       this.logger.info('AI request completed', { provider: 'apple_on_device', variant: result.variant,
-        durationMs: Date.now() - started, inputTokens: result.inputTokenCount, outputTokens: result.outputTokenCount });
+        durationMs: Date.now() - started, inputTokens: result.inputTokenCount, outputTokens: result.outputTokenCount,
+        ...(nativeTimings || {}) });
       return { success: true, text: result.text, provider: 'apple_on_device', model: result.variant,
         variant: result.variant, locale: result.locale, contextSize: result.contextSize,
         usage: { input_tokens: result.inputTokenCount, output_tokens: result.outputTokenCount,
-          total_tokens: result.inputTokenCount + result.outputTokenCount } };
+          total_tokens: result.inputTokenCount + result.outputTokenCount },
+        ...(nativeTimings ? { nativeTimings } : {}) };
     } catch (error) {
       const result = failed(error);
       this.logger.warn('Apple AI request failed', { provider: 'apple_on_device', code: result.code, durationMs: Date.now() - started });

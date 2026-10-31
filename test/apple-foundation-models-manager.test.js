@@ -13,7 +13,7 @@ const capability = () => ({ state: 'ready', available: true, variant: 'core3',
   modelDisplayName: 'AFM 3 Core', locale: 'zh-TW', contextSize: 4096, tokenCounting: true });
 const generated = (request, overrides = {}) => ({ ...capability(), text: '固定測試輸出', complete: true,
   inputTokenCount: 100, outputTokenCount: 10, maxOutputTokens: request.maxOutputTokens,
-  framingAllowance: 64, ...overrides });
+  framingAllowance: 64, capabilityMs: 1.25, tokenCountMs: 2.5, responseCompleteMs: 1000.75, ...overrides });
 
 function harness(handle, options = {}) {
   const logs = [], children = [], requests = [];
@@ -95,6 +95,7 @@ test('fresh correlated requests reuse only the owned process, accept >500 charac
   assert.equal(first.contextSize, 4096); assert.equal(children.length, 1);
   const rows = requests.filter(request => request.op === 'generate');
   assert.equal(rows.length, 2); assert.notEqual(rows[0].id, rows[1].id);
+  assert.equal(requests.filter(request => request.op === 'probe').length, 1);
   assert.notEqual(rows[0].generation, rows[1].generation);
   assert.equal(rows[1].prompt.includes('甲'), false);
   assert.deepEqual(children[0].spawnArgs.args, []);
@@ -157,10 +158,11 @@ test('deadline includes helper startup; an ignored cancel force-kills only the o
 test('unavailable readiness and each native error stop inference without exposing text', async t => {
   for (const reason of ['device_not_eligible', 'apple_intelligence_not_enabled', 'model_not_ready', 'locale_unsupported', 'capability_unavailable']) {
     const h = harness((request, child) => {
-      if (request.op === 'probe') { child.reply(request, { state: 'unavailable', available: false, reason, locale: 'zh-TW' }); return true; }
+      if (request.op === 'generate') { child.reply(request, null, reason); return true; }
     }); t.after(() => h.manager.dispose());
     await assert.rejects(h.manager.generate(textRequest()), codeIs(reason));
-    assert.equal(h.requests.some(r => r.op === 'generate'), false);
+    assert.equal(h.requests.filter(r => r.op === 'generate').length, 1);
+    assert.equal(h.requests.some(r => r.op === 'probe'), false);
   }
   for (const code of ['guardrail_violation', 'refusal', 'context_exceeded', 'budget_unavailable', 'output_over_limit', 'rate_limited']) {
     const h = harness((request, child) => {
@@ -192,7 +194,7 @@ test('invalid UTF-8, oversized frames, unknown IDs, wrong generations and unknow
 test('malformed capabilities and incomplete/empty response cannot become success', async t => {
   for (const override of [{ contextSize: 0 }, { locale: 'zh-CN' }, { tokenCounting: false }, { variant: null }]) {
     const h = harness((request, child) => {
-      if (request.op === 'probe') { child.reply(request, { ...capability(), ...override }); return true; }
+      if (request.op === 'generate') { child.reply(request, generated(request, override)); return true; }
     }); t.after(() => h.manager.dispose());
     await assert.rejects(h.manager.generate(textRequest()), codeIs('helper_protocol'));
   }
@@ -201,6 +203,23 @@ test('malformed capabilities and incomplete/empty response cannot become success
       if (request.op === 'generate') { child.reply(request, generated(request, override)); return true; }
     }); t.after(() => h.manager.dispose());
     await assert.rejects(h.manager.generate(textRequest()), codeIs('helper_protocol'));
+  }
+});
+
+test('native timing is optional, bounded and never invalidates otherwise usable text', async t => {
+  const cases = [
+    { capabilityMs: undefined, tokenCountMs: undefined, responseCompleteMs: undefined },
+    { capabilityMs: -1, tokenCountMs: 'private-timing-sentinel', responseCompleteMs: 60001 },
+    { capabilityMs: 0, tokenCountMs: 2.5, responseCompleteMs: 999.25 },
+  ];
+  for (const overrides of cases) {
+    const h = harness((request, child) => {
+      if (request.op === 'generate') { child.reply(request, generated(request, overrides)); return true; }
+    }); t.after(() => h.manager.dispose());
+    const result = await h.manager.generate(textRequest());
+    assert.equal(result.complete, true);
+    assert.equal(result.text, '固定測試輸出');
+    assert.equal(JSON.stringify(result).includes('private-timing-sentinel'), false);
   }
 });
 
@@ -251,6 +270,7 @@ test('adapter separates trusted polishing instruction from transcript, forwards 
   Object.defineProperty(input, 'baseUrl', { get() { throw new Error('endpoint'); } });
   const result = await adapter.process(input);
   assert.equal(result.success, true); assert.equal(result.model, 'core3'); assert.equal(secretReads, 0);
+  assert.deepEqual(result.nativeTimings, { capabilityMs: 1.25, tokenCountMs: 2.5, responseCompleteMs: 1000.75 });
   const request = h.requests.find(r => r.op === 'generate');
   assert.equal(request.instructions.includes('trusted-private-sentinel'), true);
   assert.equal(request.instructions.includes('transcript-private-sentinel'), false);

@@ -45,3 +45,47 @@ test("歷史紀錄分開保存 baseline 與 final，且可獨立更新", {
   assert.equal(row.text, "重新辨識原文");
   assert.equal(row.processed_text, null);
 });
+
+test("Apple 快速輸出只在 baseline 未變時更新同一筆歷史紀錄", {
+  skip: !process.env.SPEAKSLOW_PACKAGED_DB_MANAGER && process.versions.modules !== "125"
+    ? "better-sqlite3 使用 Electron ABI，須在打包後用 Electron runtime 驗證"
+    : false,
+}, (t) => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "speakslow-fast-candidate-"));
+  const database = new DatabaseManager();
+  database.initialize(dataDirectory);
+  t.after(() => {
+    database.close();
+    fs.rmSync(dataDirectory, { recursive: true });
+  });
+
+  const baseline = "三萬，不是三千五。";
+  const saved = database.saveTranscription({ raw_text: baseline, text: baseline, language: "zh-TW" });
+  const id = Number(saved.lastInsertRowid);
+  database.updateTranscriptionText(id, baseline, "不得保留的舊候選");
+
+  assert.deepEqual(
+    database.updateFastTranscriptionCandidate(id, baseline, "三萬，不是三千五元。"),
+    { success: true, changes: 1 },
+  );
+  let row = database.getTranscriptionById(id);
+  assert.equal(row.raw_text, baseline);
+  assert.equal(row.text, "三萬，不是三千五元。");
+  assert.equal(row.processed_text, null);
+
+  database.updateTranscriptionFinalText(id, "使用者稍後修改的內容");
+  assert.deepEqual(database.updateFastTranscriptionCandidate(id, baseline, "晚到的 Apple 候選"), {
+    success: false,
+    changes: 0,
+    code: "history_changed",
+    error: "歷史紀錄已變更，未套用潤稿候選",
+  });
+  assert.equal(database.getTranscriptionById(id).text, "使用者稍後修改的內容");
+
+  assert.deepEqual(database.updateFastTranscriptionCandidate(id + 9999, baseline, "候選"), {
+    success: false,
+    changes: 0,
+    code: "history_missing",
+    error: "找不到歷史紀錄，未套用潤稿候選",
+  });
+});

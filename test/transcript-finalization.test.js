@@ -143,3 +143,163 @@ test('structured persistence failures retain usable final text but never report 
     assert.equal(result.finalText, '原文'); assert.equal(writes, 1);
   }
 });
+
+test('Apple fast mode saves and emits baseline before awaiting generation, then updates the same row', async () => {
+  const { finalizeTranscript } = await import('../src/utils/transcriptFinalization.mjs');
+  const events = [];
+  let resolvePolish;
+  const polishing = new Promise(resolve => { resolvePolish = resolve; });
+  const pending = finalizeTranscript({
+    rawText: '原始逐字稿',
+    polishingEnabled: true,
+    commandMode: false,
+    outputMode: 'baseline_first',
+    transcriptionData: { language: 'zh-TW' },
+    saveTranscription: async data => {
+      events.push(['insert', data.text, data.raw_text]);
+      return { changes: 1, lastInsertRowid: 42 };
+    },
+    onBaselineReady: async result => { events.push(['output', result.finalText, result.outputAction]); },
+    processText: async () => { events.push(['generate']); return polishing; },
+    updateFastTranscriptionCandidate: async (id, expected, candidate) => {
+      events.push(['update', id, expected, candidate]);
+      return { success: true, changes: 1 };
+    },
+  });
+
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(events, [
+    ['insert', '原始逐字稿', '原始逐字稿'],
+    ['output', '原始逐字稿', 'baseline_output'],
+    ['generate'],
+  ]);
+  resolvePolish({ success: true, text: '潤稿候選。' });
+  const result = await pending;
+  assert.deepEqual(events.at(-1), ['update', 42, '原始逐字稿', '潤稿候選。']);
+  assert.equal(result.finalText, '潤稿候選。');
+  assert.equal(result.outputAction, 'candidate_only');
+  assert.equal(result.baselineOutput, true);
+  assert.equal(result.polished, true);
+});
+
+test('Apple fast mode failure keeps the one baseline output and never writes a fallback candidate', async () => {
+  const { finalizeTranscript } = await import('../src/utils/transcriptFinalization.mjs');
+  let outputs = 0;
+  let updates = 0;
+  const result = await finalizeTranscript({
+    rawText: '原始逐字稿',
+    polishingEnabled: true,
+    commandMode: false,
+    outputMode: 'baseline_first',
+    transcriptionData: {},
+    saveTranscription: async () => ({ changes: 1, lastInsertRowid: 7 }),
+    onBaselineReady: async () => { outputs += 1; },
+    processText: async () => ({ success: false, code: 'timeout' }),
+    updateFastTranscriptionCandidate: async () => { updates += 1; return { success: true, changes: 1 }; },
+  });
+  assert.equal(outputs, 1);
+  assert.equal(updates, 0);
+  assert.equal(result.finalText, '原始逐字稿');
+  assert.equal(result.issue, '潤稿失敗，已使用原始文字');
+  assert.equal(result.outputAction, 'candidate_only');
+});
+
+test('Apple fast mode does not create candidate history after initial insert failure', async () => {
+  const { finalizeTranscript } = await import('../src/utils/transcriptFinalization.mjs');
+  let updates = 0;
+  const result = await finalizeTranscript({
+    rawText: '原始逐字稿',
+    polishingEnabled: true,
+    commandMode: false,
+    outputMode: 'baseline_first',
+    transcriptionData: {},
+    saveTranscription: async () => { throw new Error('disk full'); },
+    onBaselineReady: async baseline => assert.equal(baseline.issue, '歷史紀錄保存失敗'),
+    processText: async () => ({ success: true, text: '可顯示候選。' }),
+    updateFastTranscriptionCandidate: async () => { updates += 1; },
+  });
+  assert.equal(updates, 0);
+  assert.equal(result.polished, true);
+  assert.equal(result.finalText, '可顯示候選。');
+  assert.equal(result.saved, false);
+  assert.equal(result.issue, '歷史紀錄保存失敗');
+});
+
+test('Apple fast mode ignores a late result after owner cancellation', async () => {
+  const { finalizeTranscript } = await import('../src/utils/transcriptFinalization.mjs');
+  let cancelled = false;
+  let updates = 0;
+  const result = await finalizeTranscript({
+    rawText: '原始逐字稿',
+    polishingEnabled: true,
+    commandMode: false,
+    outputMode: 'baseline_first',
+    transcriptionData: {},
+    isCancelled: () => cancelled,
+    saveTranscription: async () => ({ changes: 1, lastInsertRowid: 9 }),
+    onBaselineReady: async () => {},
+    processText: async () => { cancelled = true; return { success: true, text: '晚到候選。' }; },
+    updateFastTranscriptionCandidate: async () => { updates += 1; },
+  });
+  assert.equal(result.cancelled, true);
+  assert.equal(result.baselineOutput, true);
+  assert.equal(updates, 0);
+});
+
+test('Apple fast mode suppresses the terminal candidate event when polishing is disabled', async () => {
+  const { finalizeTranscript } = await import('../src/utils/transcriptFinalization.mjs');
+  let outputs = 0;
+  let updates = 0;
+  const result = await finalizeTranscript({
+    rawText: '原始逐字稿',
+    polishingEnabled: true,
+    commandMode: false,
+    outputMode: 'baseline_first',
+    transcriptionData: {},
+    saveTranscription: async () => ({ changes: 1, lastInsertRowid: 11 }),
+    onBaselineReady: async () => { outputs += 1; },
+    processText: async () => ({ success: false, code: 'polishing_disabled' }),
+    updateFastTranscriptionCandidate: async () => { updates += 1; },
+  });
+  assert.equal(result.cancelled, true);
+  assert.equal(result.baselineOutput, true);
+  assert.equal(outputs, 1);
+  assert.equal(updates, 0);
+});
+
+test('Apple fast mode suppresses a candidate rejected after disable or shutdown', async () => {
+  const { finalizeTranscript } = await import('../src/utils/transcriptFinalization.mjs');
+  const result = await finalizeTranscript({
+    rawText: '原始逐字稿',
+    polishingEnabled: true,
+    commandMode: false,
+    outputMode: 'baseline_first',
+    transcriptionData: {},
+    saveTranscription: async () => ({ changes: 1, lastInsertRowid: 12 }),
+    onBaselineReady: async () => {},
+    processText: async () => ({ success: true, text: '不得顯示的晚到候選。' }),
+    updateFastTranscriptionCandidate: async () => ({ success: false, code: 'candidate_stale', changes: 0 }),
+  });
+  assert.equal(result.cancelled, true);
+  assert.equal(result.baselineOutput, true);
+  assert.equal(result.finalText, null);
+  assert.equal(result.issue, null);
+});
+
+test('Apple fast mode reports a conditional history conflict but still exposes the candidate', async () => {
+  const { finalizeTranscript } = await import('../src/utils/transcriptFinalization.mjs');
+  const result = await finalizeTranscript({
+    rawText: '原始逐字稿',
+    polishingEnabled: true,
+    commandMode: false,
+    outputMode: 'baseline_first',
+    transcriptionData: {},
+    saveTranscription: async () => ({ changes: 1, lastInsertRowid: 10 }),
+    onBaselineReady: async () => {},
+    processText: async () => ({ success: true, text: '候選。' }),
+    updateFastTranscriptionCandidate: async () => ({ success: false, code: 'history_changed', changes: 0 }),
+  });
+  assert.equal(result.polished, true);
+  assert.equal(result.finalText, '候選。');
+  assert.equal(result.issue, '歷史紀錄保存失敗');
+});

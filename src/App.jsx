@@ -16,7 +16,7 @@ import { Mic, MicOff, Settings, Copy, Download, X, Pin, Minus, Sparkles, Minimiz
 import SettingsPanel from "./components/SettingsPanel";
 import { ModelDownloadProgress } from "./components/ui/model-status-indicator";
 import { resolveStreamingModeAvailability } from "./utils/streamingModeSupport.mjs";
-import { decideOutputActions, nextPolishingIssue } from "./utils/transcriptionOutputPolicy.mjs";
+import { decideFinalizationPresentation, decideOutputActions, nextPolishingIssue } from "./utils/transcriptionOutputPolicy.mjs";
 
 // 动态导入设置页面组件
 const SettingsPage = React.lazy(() => import('./settings.jsx').then(module => ({ default: module.SettingsPage })));
@@ -808,6 +808,14 @@ export default function App() {
   const handleAIOptimizationComplete = useCallback(async (optimizedResult) => {
     setLatestIssue((current) => nextPolishingIssue(current, optimizedResult));
     setInputContextStatus({ context: optimizedResult.contextStatus || 'off', dictionary: optimizedResult.dictionaryContext || '', dictionaryStatus: optimizedResult.dictionaryStatus });
+    const presentation = decideFinalizationPresentation(optimizedResult);
+    if (!presentation.paste) {
+      if (presentation.showCandidate) {
+        setProcessedText(optimizedResult.text);
+      }
+      setTimeout(() => checkLevelUp(), 400);
+      return;
+    }
     if (optimizedResult.success && optimizedResult.enhanced_by_ai && optimizedResult.text) {
       // 显示AI优化后的文本
       setProcessedText(optimizedResult.text);

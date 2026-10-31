@@ -340,6 +340,28 @@ class DatabaseManager {
     ).run(String(text).trim(), id);
   }
 
+  updateFastTranscriptionCandidate(id, expectedBaseline, candidateText) {
+    const numericId = Number(id);
+    const baseline = typeof expectedBaseline === 'string' ? expectedBaseline : '';
+    const normalizedBaseline = baseline.trim();
+    const candidate = typeof candidateText === 'string' ? candidateText.trim() : '';
+    if (!Number.isSafeInteger(numericId) || numericId <= 0) throw new Error('歷史紀錄編號無效');
+    if (!normalizedBaseline) throw new Error('辨識文字不可為空');
+    if (!candidate) throw new Error('潤稿候選不可為空');
+
+    const saved = this.db.prepare(
+      `UPDATE transcriptions
+       SET text = ?, processed_text = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND raw_text = ? AND text = ?`
+    ).run(candidate, numericId, baseline, normalizedBaseline);
+    if (saved.changes > 0) return { success: true, changes: saved.changes };
+
+    const existing = this.getTranscriptionById(numericId);
+    return existing
+      ? { success: false, changes: 0, code: 'history_changed', error: '歷史紀錄已變更，未套用潤稿候選' }
+      : { success: false, changes: 0, code: 'history_missing', error: '找不到歷史紀錄，未套用潤稿候選' };
+  }
+
   replaceTranscriptionBaseline(id, text) {
     if (!text || !String(text).trim()) throw new Error("辨識文字不可為空");
     const normalized = String(text).trim();

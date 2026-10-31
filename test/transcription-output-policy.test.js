@@ -30,3 +30,19 @@ test("只有後續潤稿成功才清除既有 issue", async () => {
     "歷史紀錄保存失敗",
   );
 });
+
+test('candidate-only 結果可顯示但永遠不進入貼上路徑', async () => {
+  const { decideFinalizationPresentation } = await import('../src/utils/transcriptionOutputPolicy.mjs');
+  assert.deepEqual(decideFinalizationPresentation({
+    success: true,
+    enhanced_by_ai: true,
+    text: 'Apple 潤稿候選。',
+    outputAction: 'candidate_only',
+  }), { paste: false, showCandidate: true });
+  assert.deepEqual(decideFinalizationPresentation({
+    success: true,
+    enhanced_by_ai: false,
+    text: '穩定原稿',
+    outputAction: 'baseline_output',
+  }), { paste: true, showCandidate: false });
+});

@@ -42,6 +42,9 @@ private struct Payload: Encodable, Sendable {
     var outputTokenCount: Int?
     var maxOutputTokens: Int?
     var framingAllowance: Int?
+    var capabilityMs: Double?
+    var tokenCountMs: Double?
+    var responseCompleteMs: Double?
 }
 
 private struct Envelope: Encodable {
@@ -70,6 +73,7 @@ private enum Output {
 
 private struct Failure: Error { let code: String }
 private func failure(_ code: String) -> Failure { Failure(code: code) }
+private func monotonicMilliseconds() -> Double { ProcessInfo.processInfo.systemUptime * 1_000 }
 
 @available(macOS 27, *)
 private func errorCode(_ error: Error) -> String {
@@ -185,8 +189,10 @@ private actor Runtime {
         defer { if active?.request.id == request.id { active = nil } }
         do {
             try Task.checkCancellation()
+            let capabilityStarted = monotonicMilliseconds()
             let model = SystemLanguageModel.default // Default guardrails; never PCC.
             var result = capabilities(model)
+            result.capabilityMs = monotonicMilliseconds() - capabilityStarted
             guard result.available == true else { throw failure(result.reason ?? "model_unavailable") }
             let localeInstruction = "目標語系為 zh-TW；需要中文輸出時使用臺灣繁體中文。保留任務要求保留的原文語言與中英混用。"
             let session = LanguageModelSession(model: model, instructions: Instructions(instructions + "\n" + localeInstruction))
@@ -196,7 +202,11 @@ private actor Runtime {
             var entries = Array(session.transcript)
             entries.append(.prompt(Transcript.Prompt(segments: [.text(.init(content: prompt))], options: options)))
             let inputCount: Int
-            do { inputCount = try await model.tokenCount(for: entries) }
+            let tokenCountStarted = monotonicMilliseconds()
+            do {
+                inputCount = try await model.tokenCount(for: entries)
+                result.tokenCountMs = monotonicMilliseconds() - tokenCountStarted
+            }
             catch {
                 try Task.checkCancellation()
                 let code = errorCode(error)
@@ -205,7 +215,9 @@ private actor Runtime {
             try Task.checkCancellation()
             guard inputCount > 0, let capacity = result.contextSize else { throw failure("budget_unavailable") }
             guard inputCount <= capacity - limit - framingAllowance else { throw failure("context_exceeded") }
+            let responseStarted = monotonicMilliseconds()
             let response = try await session.respond(to: Prompt(prompt), options: options)
+            result.responseCompleteMs = monotonicMilliseconds() - responseStarted
             try Task.checkCancellation()
             let outputCount = response.usage.output.totalTokenCount
             // maximumResponseTokens can stop without an error. Equality is

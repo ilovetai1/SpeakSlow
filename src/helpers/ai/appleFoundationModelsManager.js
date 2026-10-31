@@ -11,6 +11,7 @@ const MAX_MESSAGE_BYTES = 262144;
 const MAX_TEXT_BYTES = 131072;
 const MAX_OUTPUT_TOKENS = 2048;
 const DEFAULT_OUTPUT_TOKENS = 1024;
+const NATIVE_TIMING_FIELDS = ['capabilityMs', 'tokenCountMs', 'responseCompleteMs'];
 const ERROR_CODES = new Set([
   'platform_unsupported', 'helper_missing', 'helper_launch_failed', 'helper_exited',
   'helper_pipe', 'helper_protocol', 'helper_stopped', 'runtime_stopping',
@@ -42,6 +43,15 @@ function validCapabilities(value) {
     && value.locale === 'zh-TW' && Number.isSafeInteger(value.contextSize) && value.contextSize > 0
     && value.tokenCounting === true && typeof value.modelDisplayName === 'string'
     && value.modelDisplayName.length > 0 && value.modelDisplayName.length <= 128;
+}
+
+function safeNativeTimings(value) {
+  const timings = {};
+  for (const field of NATIVE_TIMING_FIELDS) {
+    const duration = value?.[field];
+    if (Number.isFinite(duration) && duration >= 0 && duration <= 60000) timings[field] = duration;
+  }
+  return Object.keys(timings).length ? timings : null;
 }
 
 class AppleFoundationModelsManager {
@@ -238,8 +248,6 @@ class AppleFoundationModelsManager {
       return Promise.reject(nativeError('input_over_limit'));
     }
     return this._operation(async (generation, operationSignal) => {
-      const capability = await this._probe(generation, operationSignal);
-      if (!capability.available) throw nativeError(capability.reason);
       const result = await this._request('generate', { instructions, prompt, locale, maxOutputTokens,
         timeoutMs: Math.max(1, Math.floor(Math.min(60000, timeoutMs))) }, generation, operationSignal, { cancelOnAbort: true });
       if (!validCapabilities(result) || result.complete !== true || typeof result.text !== 'string'
@@ -250,7 +258,10 @@ class AppleFoundationModelsManager {
       }
       if (Buffer.byteLength(result.text) > MAX_TEXT_BYTES || result.outputTokenCount >= maxOutputTokens) throw nativeError('output_over_limit');
       if (result.inputTokenCount + maxOutputTokens + result.framingAllowance > result.contextSize) throw nativeError('context_exceeded');
-      return result;
+      const nativeTimings = safeNativeTimings(result);
+      const { capabilityMs: _capabilityMs, tokenCountMs: _tokenCountMs,
+        responseCompleteMs: _responseCompleteMs, ...publicResult } = result;
+      return nativeTimings ? { ...publicResult, nativeTimings } : publicResult;
     }, { signal, timeoutMs });
   }
 
@@ -276,4 +287,4 @@ class AppleFoundationModelsManager {
 }
 
 module.exports = { AppleFoundationModelsManager, defaultHelperPath, nativeError, ERROR_CODES,
-  PROTOCOL_VERSION, MAX_MESSAGE_BYTES, MAX_TEXT_BYTES, MAX_OUTPUT_TOKENS, DEFAULT_OUTPUT_TOKENS };
+  safeNativeTimings, PROTOCOL_VERSION, MAX_MESSAGE_BYTES, MAX_TEXT_BYTES, MAX_OUTPUT_TOKENS, DEFAULT_OUTPUT_TOKENS };

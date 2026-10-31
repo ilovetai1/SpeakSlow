@@ -1,12 +1,15 @@
 const { randomUUID } = require('node:crypto');
 const { performance } = require('node:perf_hooks');
-const STAGES = ['capture', 'asr', 'polish', 'history_save', 'paste_command', 'context', 'hotkey_to_capture_ready', 'stop_to_paste_command_ack', 'first_preview', 'stop_to_asr_final'];
+const STAGES = ['capture', 'asr', 'polish', 'history_save', 'paste_command', 'context', 'hotkey_to_capture_ready', 'stop_to_paste_command_ack', 'first_preview', 'stop_to_asr_final', 'apple_capability', 'apple_token_count', 'apple_response_complete'];
+const APPLE_STAGES = new Set(['apple_capability', 'apple_token_count', 'apple_response_complete']);
 const OUTCOMES = ['success', 'failed', 'cancelled', 'skipped', 'missing'];
 const ASR_ENGINES = ['sherpa', 'apple', 'unknown'];
 const ASR_PROFILES = ['standard', 'fast', 'streaming', 'accurate', 'responsive', 'dictation', 'unknown'];
 const PROVIDERS = ['apple_on_device', 'ollama', 'openai_compatible', 'none', 'unknown'];
 const DAYS = 7 * 86400000;
+const MAX_TOKEN_COUNT = 10000000;
 const choose = (value, allowed, fallback = 'unknown') => allowed.includes(value) ? value : fallback;
+const validTokenCount = value => Number.isSafeInteger(value) && value >= 0 && value <= MAX_TOKEN_COUNT;
 function observation(stage, outcome, duration) {
   if (!STAGES.includes(stage) || !OUTCOMES.includes(outcome)) throw new Error('metrics_invalid');
   if (duration !== null && (!Number.isFinite(duration) || duration < 0)) throw new Error('metrics_invalid');
@@ -40,8 +43,11 @@ class LatencyManager {
       if (!Number.isFinite(x.createdAt) || !/^[a-f0-9-]{36}$/i.test(x.payload?.id)) return false;
       const p = x.payload;
       if (!legacy && (!ASR_ENGINES.includes(p.asrEngine) || !ASR_PROFILES.includes(p.asrProfile))) return false;
+      const hasInputTokens = Object.hasOwn(p, 'inputTokens');
+      const hasOutputTokens = Object.hasOwn(p, 'outputTokens');
+      if (!legacy && (hasInputTokens !== hasOutputTokens || (hasInputTokens && (!validTokenCount(p.inputTokens) || !validTokenCount(p.outputTokens))))) return false;
       if (!['offline', 'streaming', 'command', 'unknown'].includes(p.mode) || !PROVIDERS.includes(p.provider) || !['cold', 'warm', 'unknown'].includes(p.temperature)) return false;
-      return Array.isArray(p.observations) && p.observations.length <= STAGES.length && new Set(p.observations.map(o => o.stage)).size === p.observations.length && p.observations.every(o => { observation(o.stage, o.outcome, o.duration); return Object.keys(o).every(k => ['stage', 'outcome', 'duration'].includes(k)); }) && Object.keys(p).every(k => (legacy ? ['id', 'mode', 'provider', 'temperature', 'observations'] : ['id', 'mode', 'provider', 'temperature', 'observations', 'asrEngine', 'asrProfile']).includes(k));
+      return Array.isArray(p.observations) && p.observations.length <= STAGES.length && new Set(p.observations.map(o => o.stage)).size === p.observations.length && p.observations.every(o => { observation(o.stage, o.outcome, o.duration); return Object.keys(o).every(k => ['stage', 'outcome', 'duration'].includes(k)); }) && Object.keys(p).every(k => (legacy ? ['id', 'mode', 'provider', 'temperature', 'observations'] : ['id', 'mode', 'provider', 'temperature', 'observations', 'asrEngine', 'asrProfile', 'inputTokens', 'outputTokens']).includes(k));
     } catch { return false; }
   }
   prune() { this.retained = this.retained.filter(x => this.wallClock() - x.createdAt < DAYS && x.createdAt <= this.wallClock()).slice(-1000); }
@@ -67,10 +73,18 @@ class LatencyManager {
   }
   classifyASR(id, engine, profile) { const s = this.active.get(id); if (s) { s.asrEngine = choose(engine, ASR_ENGINES); s.asrProfile = choose(profile, ASR_PROFILES); } }
   classify(id, provider) { const s = this.active.get(id); if (s) s.provider = choose(provider, PROVIDERS); }
+  recordUsage(id, inputTokens, outputTokens) {
+    const s = this.enabled && this.active.get(id); if (!s) return false;
+    if (!validTokenCount(inputTokens) || !validTokenCount(outputTokens)) throw new Error('metrics_invalid');
+    s.inputTokens = inputTokens; s.outputTokens = outputTokens; return true;
+  }
   finish(id, outcome = 'missing') {
     const s = this.active.get(id); if (!s || !this.enabled) return false;
     this.active.delete(id);
-    for (const stage of STAGES) if (!s.observations.some(x => x.stage === stage)) s.observations.push(observation(stage, outcome === 'success' ? 'missing' : choose(outcome, OUTCOMES, 'missing'), null));
+    for (const stage of STAGES) {
+      if (APPLE_STAGES.has(stage) && s.provider !== 'apple_on_device') continue;
+      if (!s.observations.some(x => x.stage === stage)) s.observations.push(observation(stage, outcome === 'success' ? 'missing' : choose(outcome, OUTCOMES, 'missing'), null));
+    }
     const { hotkey: _hotkey, ...payload } = s;
     this.retained.push({ createdAt: this.wallClock(), payload });
     try { this.persist(); this.status = 'available'; } catch (error) { this.retained.pop(); this.status = 'metrics_persistence_failed'; throw error; }

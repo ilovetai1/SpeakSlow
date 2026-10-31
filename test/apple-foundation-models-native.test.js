@@ -26,6 +26,10 @@ test('native macOS27 helper probes, budgets, rejects token-limited partials and 
     assert.equal(response.complete, true); assert.ok(response.text.trim());
     assert.ok(response.outputTokenCount < response.maxOutputTokens);
     assert.equal(response.locale, 'zh-TW');
+    for (const field of ['capabilityMs', 'tokenCountMs', 'responseCompleteMs']) {
+      assert.equal(Number.isFinite(response.nativeTimings?.[field]), true);
+      assert.ok(response.nativeTimings[field] >= 0);
+    }
   }
   const controller = new AbortController();
   const operation = manager.generate({ instructions: '詳細列出一百個不同水果並逐一說明。', prompt: '水果列表', signal: controller.signal });

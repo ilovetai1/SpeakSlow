@@ -10,6 +10,28 @@ module.exports = function register(ctx) {
     return ctx.databaseManager.saveTranscription(data);
   });
 
+  ipcMain.handle("update-fast-transcription-candidate", (event, id, expectedBaseline, candidateText, jobId) => {
+    try {
+      const job = ctx.speechEngineManager?.job;
+      const eligible = job
+        && ctx.aiProcessor?.stopping !== true
+        && job.id === jobId
+        && job.owner === event.sender.id
+        && job.kind === 'recording'
+        && job.cancelled !== true
+        && job.generation === ctx.speechEngineManager.generation
+        && ctx.databaseManager.getSetting('enable_ai_optimization', false) === true
+        && ctx.databaseManager.getSetting('ai_provider', null) === 'apple_on_device'
+        && ctx.databaseManager.getSetting('apple_polishing_output_mode', 'fast') === 'fast';
+      if (!eligible) {
+        return { success: false, changes: 0, code: 'candidate_stale', error: 'Apple 潤稿工作已結束，未更新歷史紀錄' };
+      }
+      return ctx.databaseManager.updateFastTranscriptionCandidate(id, expectedBaseline, candidateText);
+    } catch (error) {
+      return { success: false, changes: 0, code: 'history_update_invalid', error: error.message };
+    }
+  });
+
   ipcMain.handle("get-transcriptions", (event, limit, offset) => {
     return ctx.databaseManager.getTranscriptions(limit, offset);
   });
@@ -49,6 +71,9 @@ module.exports = function register(ctx) {
   const saveSetting = async (event, key, value) => {
     if (['enable_ai_optimization', 'context_aware_polishing_enabled', 'local_correction_learning_enabled', 'latency_metrics_enabled'].includes(key) && typeof value !== 'boolean') {
       throw new Error('AI 潤稿開關必須是布林值');
+    }
+    if (key === 'apple_polishing_output_mode' && !['fast', 'wait_for_polished'].includes(value)) {
+      throw new Error('Apple 潤稿輸出模式無效');
     }
     if (key === 'ai_provider') {
       ctx.aiProcessor.validateProviderSetting(value);

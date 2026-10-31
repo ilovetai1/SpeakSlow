@@ -30,8 +30,34 @@ test('1000-session and seven-day limits survive restart', () => {
 });
 test('Apple on-device polishing remains a distinct bounded provider class', () => {
   const f = fixture(); const id = f.m.start('offline');
-  f.m.classify(id, 'apple_on_device'); f.m.record(id, 'polish', 'success', 12); f.m.finish(id);
+  f.m.classify(id, 'apple_on_device'); f.m.record(id, 'polish', 'success', 12);
+  f.m.record(id, 'apple_capability', 'success', 1.5);
+  f.m.record(id, 'apple_token_count', 'success', 2.5);
+  f.m.record(id, 'apple_response_complete', 'success', 8.5);
+  f.m.recordUsage(id, 320, 24);
+  f.m.finish(id);
   const group = f.m.stats().groups.find(item => item.stage === 'polish');
   assert.equal(group.provider, 'apple_on_device');
   assert.equal(group.p50, 12);
+  assert.equal(f.m.stats().groups.find(item => item.stage === 'apple_response_complete').p50, 8.5);
+  assert.equal(f.m.export().sessions[0].inputTokens, 320);
+  assert.equal(f.m.export().sessions[0].outputTokens, 24);
+});
+test('Non-Apple sessions do not fabricate missing Apple-native stages', () => {
+  const f = fixture(); const id = f.m.start('offline');
+  f.m.classify(id, 'ollama'); f.m.record(id, 'polish', 'success', 10); f.m.finish(id);
+  assert.equal(f.m.export().sessions[0].observations.some(item => item.stage.startsWith('apple_')), false);
+  assert.equal(Object.hasOwn(f.m.export().sessions[0], 'inputTokens'), false);
+});
+test('token usage is bounded and persisted records remain backward compatible', () => {
+  const f = fixture(); const id = f.m.start('offline');
+  assert.throws(() => f.m.recordUsage(id, -1, 2), /metrics_invalid/);
+  assert.throws(() => f.m.recordUsage(id, 2, 'private-token-sentinel'), /metrics_invalid/);
+  assert.equal(f.m.recordUsage(id, 12, 3), true); f.m.finish(id);
+  const restarted = new LatencyManager({
+    getSetting: (key, fallback) => f.settings.has(key) ? f.settings.get(key) : fallback,
+    setSetting: (key, value) => f.settings.set(key, structuredClone(value)),
+  }, { wallClock: () => 1000 });
+  assert.equal(restarted.export().sessions[0].inputTokens, 12);
+  assert.equal(restarted.export().sessions[0].outputTokens, 3);
 });

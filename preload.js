@@ -150,6 +150,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // 数据库操作
   saveTranscription: (data) =>
     ipcRenderer.invoke("save-transcription", data),
+  updateFastTranscriptionCandidate: (id, expectedBaseline, candidateText, jobId) =>
+    ipcRenderer.invoke("update-fast-transcription-candidate", id, expectedBaseline, candidateText, jobId),
   getTranscriptions: (limit, offset) =>
     ipcRenderer.invoke("get-transcriptions", limit, offset),
   getTranscriptionStats: () =>

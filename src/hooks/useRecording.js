@@ -488,17 +488,32 @@ export const useRecording = (modelStatus) => {
             window.onTranscriptionComplete({ ...transcriptionResult, text: raw_text, enhanced_by_ai: false });
           }
 
-          const useAI = await window.electronAPI.getSetting('enable_ai_optimization', false);
-          const commandMode = await window.electronAPI.getCommandMode?.() === true;
+          const [useAI, commandMode, aiProvider] = await Promise.all([
+            window.electronAPI.getSetting('enable_ai_optimization', false),
+            Promise.resolve(window.electronAPI.getCommandMode?.()).then(value => value === true),
+            window.electronAPI.getSetting('ai_provider', null),
+          ]);
+          const appleOutputMode = useAI && !commandMode && aiProvider === 'apple_on_device'
+            ? await window.electronAPI.getSetting('apple_polishing_output_mode', 'fast')
+            : 'wait_for_polished';
+          const fastAppleOutput = useAI && !commandMode
+            && aiProvider === 'apple_on_device'
+            && appleOutputMode === 'fast';
           setIsOptimizing(useAI && !commandMode);
           const finalized = await finalizeTranscript({
             rawText: raw_text,
             isCancelled: () => speechJobRef.current?.id !== transcribeOptions.jobId,
             polishingEnabled: useAI,
             commandMode,
+            outputMode: fastAppleOutput ? 'baseline_first' : 'wait_for_polished',
             transcriptionData,
             processText: async (text, mode) => {
-              const invokePolish = () => window.electronAPI.processText(text, mode, { workflow: 'automatic_offline', scopeHandle: evolutionRef.current.scopeHandle, metricId: metricRef.current?.id });
+              const invokePolish = () => window.electronAPI.processText(text, mode, {
+                workflow: 'automatic_offline',
+                scopeHandle: evolutionRef.current.scopeHandle,
+                metricId: metricRef.current?.id,
+                ...(fastAppleOutput ? { expectedProvider: 'apple_on_device' } : {}),
+              });
               const result = metricRef.current ? await metricRef.current.measure('polish', invokePolish) : await invokePolish();
               evolutionRef.current.contextStatus = result?.contextStatus || 'off';
               if (result?.success && shouldConvert && targetLang === 'zh-TW') {
@@ -507,6 +522,27 @@ export const useRecording = (modelStatus) => {
               return result;
             },
             saveTranscription: (data) => metricRef.current ? metricRef.current.measure('history_save', () => window.electronAPI.saveTranscription(data)) : window.electronAPI.saveTranscription(data),
+            updateFastTranscriptionCandidate: fastAppleOutput
+              ? (id, expectedBaseline, candidateText) => window.electronAPI.updateFastTranscriptionCandidate(id, expectedBaseline, candidateText, transcribeOptions.jobId)
+              : undefined,
+            onBaselineReady: fastAppleOutput ? async (baseline) => {
+              if (speechJobRef.current?.id !== transcribeOptions.jobId) return;
+              if (window.onAIOptimizationComplete) {
+                await window.onAIOptimizationComplete({
+                  ...transcriptionResult,
+                  success: true,
+                  text: baseline.finalText,
+                  enhanced_by_ai: false,
+                  issue: baseline.issue,
+                  outputAction: 'baseline_output',
+                  contextStatus: evolutionRef.current.contextStatus,
+                  dictionaryContext: evolutionRef.current.dictionaryContext,
+                  dictionaryStatus: evolutionRef.current.dictionaryStatus,
+                });
+              } else {
+                metricRef.current?.outputDone();
+              }
+            } : undefined,
           });
           setIsOptimizing(false);
 
@@ -520,6 +556,7 @@ export const useRecording = (modelStatus) => {
               text: finalized.finalText,
               enhanced_by_ai: finalized.polished,
               issue: finalized.issue,
+              outputAction: finalized.outputAction,
               contextStatus: evolutionRef.current.contextStatus,
               dictionaryContext: evolutionRef.current.dictionaryContext,
               dictionaryStatus: evolutionRef.current.dictionaryStatus,

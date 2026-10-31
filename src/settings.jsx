@@ -58,6 +58,7 @@ const SettingsPage = () => {
     ai_api_key: "",
     ai_base_url: "https://api.openai.com/v1",
     ai_model: "gpt-4o-mini",
+    apple_polishing_output_mode: "fast",
     transcript_polishing_prompt: "",
     enable_notifications: true,
     enable_streaming_mode: false,
@@ -207,6 +208,9 @@ const SettingsPage = () => {
             ? allSettings.ollama_model || allSettings.ai_model || ''
             : aiProvider === 'apple_on_device' ? 'system'
             : allSettings.ai_model || "gpt-4o-mini",
+          apple_polishing_output_mode: ['fast', 'wait_for_polished'].includes(allSettings.apple_polishing_output_mode)
+            ? allSettings.apple_polishing_output_mode
+            : allSettings.apple_polishing_output_mode == null ? 'fast' : 'wait_for_polished',
           transcript_polishing_prompt: transcriptPolishingPrompt,
           enable_notifications: allSettings.enable_notifications !== false, // 默认为true
           enable_streaming_mode: allSettings.enable_streaming_mode === true, // 默認關閉
@@ -306,8 +310,16 @@ const SettingsPage = () => {
 
   // 通用：改一個設定值並即時存檔（給下拉選單等用）
   const handleSettingChange = async (key, value) => {
+    const previousValue = settings[key];
     setSettings(prev => ({ ...prev, [key]: value }));
-    try { await window.electronAPI?.setSetting?.(key, value); } catch (e) { /* ignore */ }
+    try {
+      await window.electronAPI?.setSetting?.(key, value);
+    } catch (error) {
+      setSettings(current => current[key] === value
+        ? { ...current, [key]: previousValue }
+        : current);
+      toast.error(error?.message || t('settings.saveFailed'));
+    }
   };
 
   const prepareStreamingModel = async () => {
@@ -1569,6 +1581,23 @@ const SettingsPage = () => {
                     <p className="text-xs">狀態：{appleStatusLoading ? '查詢中' : appleStatus?.available ? '可使用' : '無法使用'}</p>
                     <p className="text-xs">模型變體：{appleStatus?.modelDisplayName || appleStatus?.variant || '未回報'}；Context：{appleStatus?.contextSize || '未回報'} tokens；語言：{appleStatus?.locale || 'zh-TW'}</p>
                     {!appleStatusLoading && appleStatus?.available !== true && <p className="text-xs text-red-600 dark:text-red-400" role="status">{appleStatus?.error || 'Apple 本機模型尚未就緒'}{appleStatus?.code ? `（${appleStatus.code}）` : ''}</p>}
+                    <div className="pt-1">
+                      <label htmlFor="apple-polishing-output-mode" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        完成錄音後的輸出時機
+                      </label>
+                      <select
+                        id="apple-polishing-output-mode"
+                        value={settings.apple_polishing_output_mode}
+                        onChange={(event) => handleSettingChange('apple_polishing_output_mode', event.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      >
+                        <option value="fast">快速輸出（先貼辨識文字）</option>
+                        <option value="wait_for_polished">等待潤稿（完成後再貼上）</option>
+                      </select>
+                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                        快速輸出只貼上一次；稍後完成的 Apple 潤稿只更新 SpeakSlow 面板與歷史，不會覆寫已貼出的文字。
+                      </p>
+                    </div>
                     <p className="text-xs text-gray-600 dark:text-gray-400">不需要 API key 或服務網址。模型不可用時會回報失敗，不會改送其他 provider。可使用狀態不代表潤稿品質已通過驗收。</p>
                   </div>
                 ) : settings.ai_provider === 'ollama' ? (
