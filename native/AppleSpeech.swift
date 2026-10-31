@@ -12,7 +12,7 @@ func emit(_ value: [String: Any]) {
 }
 struct RuntimeFailure: Error { let code: String }
 func fail(_ code: String) -> RuntimeFailure { RuntimeFailure(code: code) }
-@available(macOS 26, *)
+@available(macOS 27, *)
 func speechFailureCode(_ error: Error) -> String {
     if let local = error as? RuntimeFailure { return local.code }
     if error is CancellationError { return "session_closed" }
@@ -61,9 +61,9 @@ final class ReceiptRegistry: @unchecked Sendable {
         for receipt in current { receipt.complete(fail("session_closed")) }
     }
 }
-@available(macOS 26, *)
+@available(macOS 27, *)
 struct QueuedInput: @unchecked Sendable { let input: AnalyzerInput; let receipt: InputReceipt }
-@available(macOS 26, *)
+@available(macOS 27, *)
 struct AcknowledgedInputs: AsyncSequence, Sendable {
     typealias Element = AnalyzerInput
     let stream: AsyncStream<QueuedInput>
@@ -78,7 +78,7 @@ struct AcknowledgedInputs: AsyncSequence, Sendable {
     func makeAsyncIterator() -> AsyncIterator { AsyncIterator(base: stream.makeAsyncIterator()) }
 }
 
-@available(macOS 26, *)
+@available(macOS 27, *)
 enum TranscriberModule {
     case speech(SpeechTranscriber)
     case dictation(DictationTranscriber)
@@ -129,7 +129,7 @@ enum TranscriberModule {
     }
 }
 
-@available(macOS 26, *)
+@available(macOS 27, *)
 actor AnalysisSession {
     let id: String
     let analyzer: SpeechAnalyzer
@@ -250,7 +250,7 @@ actor AnalysisSession {
     }
 }
 
-@available(macOS 26, *)
+@available(macOS 27, *)
 actor SpeechServer {
     var session: AnalysisSession?
     func module(_ profile: String) -> any SpeechModule {
@@ -327,7 +327,7 @@ actor SpeechServer {
 
 @main struct AppleSpeech {
     static func main() async {
-        if #available(macOS 26, *) {
+        if #available(macOS 27, *) {
             let server = SpeechServer()
             await Task.detached {
                 while let line = readLine() {

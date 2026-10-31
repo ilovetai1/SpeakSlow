@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "suite": "speakslow-macos27-polishing-holdout",
+  "locale": "zh-TW",
+  "cases": [
+    {
+      "id": "holdout-price-negation",
+      "category": ["number", "negation", "critical"],
+      "raw_asr": "總額不是八萬五是八千五百元含稅",
+      "reference": "總額不是八萬五，是八千五百元，含稅。",
+      "assertions": { "must_contain_all": ["八千五百", "含稅"], "must_not_contain_any": [], "must_not_match_any": ["總額(?:是|為)八萬五(?:[。！]|$)", "八萬五[，,、\\s]*(?:而)?不是(?:是)?八千五百"] }
+    },
+    {
+      "id": "holdout-deployment-hold",
+      "category": ["negation", "critical"],
+      "raw_asr": "今天不要部署正式環境先只跑 staging smoke test",
+      "reference": "今天不要部署正式環境，先只跑 staging smoke test。",
+      "assertions": { "must_contain_all": ["staging", "smoke test"], "must_not_contain_any": [], "must_match_all": ["(?:不要|不得|禁止).*部署正式環境"] }
+    },
+    {
+      "id": "holdout-date-and-time",
+      "category": ["date", "time"],
+      "raw_asr": "截止日是二零二六年十二月三十一日晚上十一點五十九分",
+      "reference": "截止日是 2026 年 12 月 31 日晚上 11 點 59 分。",
+      "assertions": { "must_contain_all": ["12 月 31 日", "11 點 59 分"], "must_not_contain_any": [] }
+    },
+    {
+      "id": "holdout-person-and-company",
+      "category": ["name", "proper_noun"],
+      "raw_asr": "請王柏翰把 SpeakSlow 的結果寄給陳怡安",
+      "reference": "請王柏翰把 SpeakSlow 的結果寄給陳怡安。",
+      "assertions": { "must_contain_all": ["王柏翰", "SpeakSlow", "陳怡安"], "must_not_contain_any": [] }
+    },
+    {
+      "id": "holdout-mixed-language-version",
+      "category": ["mixed_language", "version"],
+      "raw_asr": "release candidate 用 version two point one point zero 不要 tag latest",
+      "reference": "release candidate 使用 version 2.1.0，不要標記 latest。",
+      "assertions": { "must_contain_all": ["release candidate", "2.1.0", "不要", "latest"], "must_not_contain_any": [] }
+    },
+    {
+      "id": "holdout-homophone-safety",
+      "category": ["homophone", "counterexample"],
+      "raw_asr": "先核准測試帳號不要核銷這筆款項",
+      "reference": "先核准測試帳號，不要核銷這筆款項。",
+      "assertions": { "must_contain_all": ["核准"], "must_not_contain_any": [], "must_match_all": ["(?:不要|不得|禁止).*核銷"] }
+    },
+    {
+      "id": "holdout-long-input",
+      "category": ["long_input", "boundary", "critical"],
+      "input_builder": { "text": "這是長逐字稿測試，數字 3500 與否定詞不要上線都必須保留。", "repeat": 180 },
+      "reference": null,
+      "assertions": { "must_contain_all": ["3500", "不要上線"], "must_not_contain_any": [], "min_occurrences": { "3500": 180, "不要上線": 180 } }
+    },
+    {
+      "id": "holdout-silence",
+      "category": ["silence", "empty_asr"],
+      "raw_asr": "",
+      "reference": "",
+      "skip_polish": true,
+      "assertions": { "must_contain_all": [], "must_not_contain_any": [] }
+    },
+    {
+      "id": "holdout-noisy-audio-empty",
+      "category": ["noisy_audio", "empty_asr"],
+      "raw_asr": "",
+      "reference": "",
+      "skip_polish": true,
+      "audio_fixture": "out/apple-engine-product/corpus/synthetic-00.wav",
+      "assertions": { "must_contain_all": [], "must_not_contain_any": [] }
+    },
+    {
+      "id": "holdout-self-correction-name",
+      "category": ["self_correction", "name", "critical"],
+      "raw_asr": "負責人是雅婷不是是怡婷請保留後面的怡婷",
+      "reference": "負責人是怡婷，請保留後面的怡婷。",
+      "assertions": { "must_contain_all": ["怡婷"], "must_not_contain_any": [], "must_not_match_any": ["負責人(?:是|為)雅婷[，,、\\s]*(?:而)?不是(?:是)?怡婷", "負責人(?:是|為)雅婷(?:[。！]|$)"] }
+    }
+  ]
+}

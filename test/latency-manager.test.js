@@ -28,3 +28,10 @@ test('1000-session and seven-day limits survive restart', () => {
   const f = fixture(); for (let i = 0; i < 1002; i++) { const id = f.m.start('offline'); f.m.finish(id); }
   assert.equal(f.m.stats().sessions, 1000); f.age(7 * 86400000); assert.equal(f.m.export().sessions.length, 0);
 });
+test('Apple on-device polishing remains a distinct bounded provider class', () => {
+  const f = fixture(); const id = f.m.start('offline');
+  f.m.classify(id, 'apple_on_device'); f.m.record(id, 'polish', 'success', 12); f.m.finish(id);
+  const group = f.m.stats().groups.find(item => item.stage === 'polish');
+  assert.equal(group.provider, 'apple_on_device');
+  assert.equal(group.p50, 12);
+});

@@ -15,6 +15,12 @@ export default {
     exportSrt: 'Export srt',
     outTxt: 'Transcript',
     outSrt: 'Subtitles SRT',
+    previewPolish: 'Preview polish',
+    polishing: 'Polishing…',
+    polishCandidate: 'Polished candidate (raw text stays unchanged until confirmed)',
+    acceptPolish: 'Use candidate',
+    resetRaw: 'Restore raw',
+    polishFailed: 'Polishing failed. The complete raw transcript is unchanged.',
   },
   // App name
   appName: 'SpeakSlow',

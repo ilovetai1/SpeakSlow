@@ -3,6 +3,7 @@ const { runVoiceCommand } = require("../commandMode");
 const recovery = require("../recovery");
 
 module.exports = function register(ctx) {
+  const historyPolish = new (require('../historyPolishManager'))(ctx.databaseManager, ctx.aiProcessor);
   const withOwner = async (event, start) => {
     const operation = start();
     const job = ctx.speechEngineManager.job;
@@ -281,24 +282,17 @@ module.exports = function register(ctx) {
 
   ipcMain.handle("preview-history-polish", async (event, id) => {
     try {
-      const record = ctx.databaseManager.getTranscriptionById(id);
-      if (!record) return { success: false, error: "找不到該筆紀錄" };
-      const { previewHistoryPolish } = await import("../../utils/historyPolishing.mjs");
-      return await previewHistoryPolish({
-        record,
-        processText: (text, mode) => ctx.aiProcessor.processTextWithAI(text, mode),
-      });
+      return await historyPolish.preview(event.sender, id);
     } catch (error) {
       return { success: false, error: error.message };
     }
   });
 
-  ipcMain.handle("apply-history-polish", async (event, id, candidateText) => {
+  ipcMain.handle('cancel-history-polish', event => historyPolish.cancel(event.sender));
+
+  ipcMain.handle("apply-history-polish", async (event, id, candidateToken) => {
     try {
-      const record = ctx.databaseManager.getTranscriptionById(id);
-      if (!record) return { success: false, error: "找不到該筆紀錄" };
-      ctx.databaseManager.updateTranscriptionFinalText(id, candidateText);
-      return { success: true, text: String(candidateText).trim() };
+      return historyPolish.apply(event.sender, id, candidateToken);
     } catch (error) {
       return { success: false, error: error.message };
     }

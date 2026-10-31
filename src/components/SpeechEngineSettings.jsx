@@ -4,6 +4,7 @@ import { speechError, speechStateLabels } from '../utils/speechEngineMessages.mj
 
 export default function SpeechEngineSettings() {
   const status = useModelStatus();
+  const isMac = (status.platform || window.electronAPI?.getPlatform?.()) === 'darwin';
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => setError(''), [status.selected, status.profile]);
@@ -14,13 +15,14 @@ export default function SpeechEngineSettings() {
   };
   return <section className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3" aria-label="語音辨識引擎">
     <label htmlFor="speech-engine" className="font-medium text-gray-900 dark:text-gray-100">語音辨識引擎</label>
-    <select id="speech-engine" value={status.selected || ''} disabled={status.busy || (saving && !status.isDownloading)} onChange={event => run(() => window.electronAPI.selectSpeechEngine('asr_engine', event.target.value))} className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2">
-      {!['sherpa', 'apple'].includes(status.selected) && <option value="">請選擇引擎</option>}
-      <option value="sherpa">現有本機引擎（Sherpa）</option>
-      <option value="apple" disabled={!status.appleAvailable && status.selected !== 'apple'}>Apple 原生引擎（macOS 26＋、Apple Silicon）</option>
+    <select id="speech-engine" value={isMac ? 'apple' : status.selected || ''} disabled={isMac || status.busy || (saving && !status.isDownloading)} onChange={event => run(() => window.electronAPI.selectSpeechEngine('asr_engine', event.target.value))} className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2">
+      {!isMac && status.selected !== 'sherpa' && <option value="">請選擇引擎</option>}
+      {!isMac && <option value="sherpa">現有本機引擎（Sherpa）</option>}
+      {isMac && <option value="apple" disabled={!status.appleAvailable && status.selected !== 'apple'}>Apple 原生引擎（macOS 27＋、Apple Silicon）</option>}
     </select>
+    {isMac && <p className="text-xs text-gray-500">Mac 使用 Apple 原生辨識；可選擇下方三種辨識模式。</p>}
     <p role="status" className="text-sm text-gray-600 dark:text-gray-300">{speechStateLabels[status.state] || status.state}{status.isDownloading ? ` ${Math.round(status.downloadProgress)}%` : ''}</p>
-    {status.selected === 'apple' && <>
+    {isMac && status.selected === 'apple' && <>
       <label htmlFor="apple-response-profile" className="text-sm">Apple 辨識模式</label>
       <select id="apple-response-profile" value={status.profile || 'accurate'} disabled={saving || status.busy} onChange={event => run(() => window.electronAPI.selectSpeechEngine('apple_response_profile', event.target.value))} className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2">
         <option value="accurate">SpeechTranscriber・完整上下文（預設）</option>
@@ -35,8 +37,7 @@ export default function SpeechEngineSettings() {
     </>}
     {status.state === 'needs_download' && <button disabled={saving} onClick={() => run(() => window.electronAPI.installSpeechAssets())} className="rounded-lg bg-blue-600 text-white px-3 py-2">下載所需模型</button>}
     {status.state === 'downloading' && <div className="space-y-2">
-      <button disabled={status.busy} onClick={() => run(() => window.electronAPI.selectSpeechEngine('asr_engine', 'sherpa'))} className="rounded-lg border px-3 py-2">停止等待並選回現有本機引擎</button>
-      <p className="text-xs text-gray-500">Apple 系統模型可能持續在背景下載。</p>
+      <p className="text-xs text-gray-500">{isMac ? 'Apple 系統模型可能持續在背景下載。' : '正在下載本機辨識模型。'}</p>
     </div>}
     {['failed', 'unavailable'].includes(status.state) && <button disabled={saving || status.busy} onClick={() => run(() => window.electronAPI.retrySpeechEngine())} className="rounded-lg border px-3 py-2">重新檢查</button>}
     {(error || status.error) && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{status.error || error}</p>}

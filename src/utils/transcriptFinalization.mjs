@@ -10,11 +10,12 @@ export async function finalizeTranscript({
   let finalText = rawText;
   let polished = false;
   let issue = null;
+  if (isCancelled()) return { cancelled: true, finalText: null, saved: false };
 
   if (polishingEnabled === true && commandMode !== true) {
     try {
       const result = await processText(rawText, 'optimize');
-      if (result?.cancelled || result?.code === 'runtime_stopping') {
+      if (result?.cancelled || ['cancelled', 'runtime_stopping'].includes(result?.code)) {
         return {
           finalData: null,
           finalText: null,
@@ -50,10 +51,13 @@ export async function finalizeTranscript({
   let saveResult = null;
   try {
     saveResult = await saveTranscription(finalData);
+    if (saveResult === false || saveResult?.success === false || saveResult?.changes === 0) throw new Error('history_save_failed');
   } catch {
     saved = false;
     issue = '歷史紀錄保存失敗';
   }
+
+  if (isCancelled()) return { cancelled: true, finalText: null, saved, saveResult };
 
   return {
     finalData,

@@ -10,6 +10,23 @@ const {
 const OpenAICompatibleAdapter = require("./ai/openAICompatibleAdapter");
 const OllamaAdapter = require("./ai/ollamaAdapter");
 const OllamaRuntime = require("./ai/ollamaRuntime");
+const { isMacOS27OrNewer } = require('./macos27Support');
+
+const PROVIDERS = Object.freeze({
+  apple_on_device: { adapter: 'appleOnDevice', local: true, latency: 'apple_on_device' },
+  ollama: { adapter: 'ollama', local: true, latency: 'ollama' },
+  openai: { adapter: 'openAICompatible', local: false, latency: 'openai_compatible' },
+  deepseek: { adapter: 'openAICompatible', local: false, latency: 'openai_compatible' },
+  gemini: { adapter: 'openAICompatible', local: false, latency: 'openai_compatible' },
+  custom: { adapter: 'openAICompatible', local: false, latency: 'openai_compatible' },
+});
+
+function providerDefinition(provider) {
+  if (typeof provider !== 'string' || !Object.hasOwn(PROVIDERS, provider)) {
+    throw Object.assign(new Error('AI provider 設定無效'), { code: 'provider_invalid' });
+  }
+  return PROVIDERS[provider];
+}
 
 // qwen3:1.7b + universal prompt + num_ctx:2048 實測：500 字 6.5 秒完成；
 // 600 字在重複文字壓力案例超過固定 60 秒 timeout，因此上限固定為 500。
@@ -33,7 +50,9 @@ class AITextProcessor {
     this.adapters = {
       openAICompatible: adapters.openAICompatible || new OpenAICompatibleAdapter({ logger }),
       ollama: adapters.ollama || new OllamaAdapter({ logger, runtime: this.ollamaRuntime }),
+      appleOnDevice: adapters.appleOnDevice || null,
     };
+    this.applePlatformSupported = adapters.platformSupported || isMacOS27OrNewer;
     this.stopping = false;
     this.requests = new Set();
   }
@@ -70,9 +89,12 @@ class AITextProcessor {
   async _loadConfig(testConfig = null) {
     if (testConfig) {
       const baseUrl = testConfig.ai_base_url || "https://api.openai.com/v1";
+      const provider = testConfig.ai_provider ?? inferLegacyProvider(baseUrl);
+      providerDefinition(provider);
+      if (provider === 'apple_on_device') return { provider, model: 'system', locale: 'zh-TW' };
       return {
-        provider: testConfig.ai_provider || inferLegacyProvider(baseUrl),
-        apiKey: testConfig.use_saved_api_key === true
+        provider,
+        apiKey: provider === 'ollama' ? undefined : testConfig.use_saved_api_key === true
           ? await this.databaseManager.getSetting("ai_api_key")
           : testConfig.ai_api_key,
         baseUrl,
@@ -80,12 +102,16 @@ class AITextProcessor {
       };
     }
 
-    let apiKey = await this.databaseManager.getSetting("ai_api_key");
+    const savedProvider = await this.databaseManager.getSetting("ai_provider");
+    // Resolve local providers before reading any saved secret or endpoint.
+    if (savedProvider != null) providerDefinition(savedProvider);
+    if (savedProvider === 'apple_on_device') return { provider: savedProvider, model: 'system', locale: 'zh-TW' };
     let baseUrl = await this.databaseManager.getSetting("ai_base_url");
     let model = await this.databaseManager.getSetting("ai_model");
-    const savedProvider = await this.databaseManager.getSetting("ai_provider");
+    const initialProvider = savedProvider ?? inferLegacyProvider(baseUrl || 'https://api.openai.com/v1');
+    let apiKey = initialProvider === 'ollama' ? undefined : await this.databaseManager.getSetting("ai_api_key");
 
-    if (!apiKey && process.env.DEEPSEEK_API_KEY && savedProvider !== "ollama") {
+    if (!apiKey && process.env.DEEPSEEK_API_KEY && !PROVIDERS[initialProvider].local) {
       apiKey = process.env.DEEPSEEK_API_KEY;
       baseUrl = baseUrl || "https://api.deepseek.com";
       model = model || "deepseek-chat";
@@ -94,11 +120,69 @@ class AITextProcessor {
     baseUrl = baseUrl || "https://api.openai.com/v1";
     model = model || "gpt-3.5-turbo";
     return {
-      provider: savedProvider || inferLegacyProvider(baseUrl),
+      provider: savedProvider ?? inferLegacyProvider(baseUrl),
       apiKey,
       baseUrl,
       model,
     };
+  }
+
+  validateProviderSetting(provider) {
+    providerDefinition(provider);
+    if (provider === 'apple_on_device' && !this.applePlatformSupported()) {
+      throw Object.assign(new Error('Apple 本機潤稿需要 macOS 27 以上與 Apple Silicon'), { code: 'platform_unsupported' });
+    }
+  }
+
+  _adapter(provider) {
+    const definition = providerDefinition(provider);
+    this.validateProviderSetting(provider);
+    if (provider === 'apple_on_device' && !this.adapters.appleOnDevice) {
+      // Lazy loading keeps other platforms independent of the native helper.
+      try {
+        const AppleOnDeviceAdapter = require('./ai/appleOnDeviceAdapter');
+        this.adapters.appleOnDevice = new AppleOnDeviceAdapter({ logger: this.logger });
+      } catch {
+        throw Object.assign(new Error('Apple 本機潤稿 helper 無法啟動'), { code: 'helper_missing' });
+      }
+    }
+    return this.adapters[definition.adapter];
+  }
+
+  async getApplePolishingStatus({ signal, timeoutMs = 20000 } = {}) {
+    const metadata = { provider: 'apple_on_device', local: true, model: 'system', platformSupported: this.applePlatformSupported() };
+    if (!metadata.platformSupported) return { ...metadata, available: false, code: 'platform_unsupported', reason: 'platform_unsupported', error: 'Apple 本機潤稿需要 macOS 27 以上與 Apple Silicon' };
+    try {
+      const adapter = this._adapter('apple_on_device');
+      signal?.throwIfAborted();
+      const status = await adapter.checkStatus({ signal, timeoutMs });
+      signal?.throwIfAborted();
+      return {
+        ...metadata,
+        available: status.available === true,
+        status: status.available === true ? 'ready' : 'unavailable',
+        code: status.code,
+        reason: status.reason,
+        error: status.available === true ? undefined : status.error || 'Apple 本機模型目前無法使用',
+        variant: typeof status.variant === 'string' ? status.variant.slice(0, 200) : null,
+        modelDisplayName: typeof status.modelDisplayName === 'string' ? status.modelDisplayName.slice(0, 200) : null,
+        contextSize: Number.isSafeInteger(status.contextSize) && status.contextSize > 0 ? status.contextSize : null,
+        locale: typeof status.locale === 'string' ? status.locale : 'zh-TW',
+        tokenCountAvailable: status.tokenCounting === true || status.tokenCountAvailable === true,
+      };
+    } catch (error) {
+      const code = typeof error.code === 'string' ? error.code : signal?.aborted ? 'cancelled' : 'provider_unavailable';
+      return { ...metadata, available: false, code, reason: code, error: 'Apple 本機模型狀態查詢失敗' };
+    }
+  }
+
+  async assertCanEnablePolishing(provider) {
+    const selected = provider ?? (await this._loadConfig()).provider;
+    this.validateProviderSetting(selected);
+    if (selected === 'apple_on_device') {
+      const status = await this.checkAIStatus({ ai_provider: 'apple_on_device' });
+      if (!status.available) throw Object.assign(new Error(status.error || 'Apple 本機模型目前無法使用'), { code: status.code || 'provider_unavailable' });
+    }
   }
 
   _messages(
@@ -120,12 +204,14 @@ class AITextProcessor {
     ];
   }
 
-  async processTextWithAI(text, mode = "optimize", customPrompt = null, { requireEnabled = false, workflow, scopeHandle, metricId, profile: selectedProfile } = {}) {
+  async processTextWithAI(text, mode = "optimize", customPrompt = null, { requireEnabled = false, workflow, scopeHandle, metricId, profile: selectedProfile, signal } = {}) {
     const startedAt = Date.now();
     let usedExternalContext = false;
     const controller = new AbortController();
+    const requestSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
     this.requests.add(controller);
     try {
+      requestSignal.throwIfAborted();
       if (requireEnabled && !customPrompt && (mode === 'optimize' || mode === 'optimize_long')
         && await this.databaseManager.getSetting('enable_ai_optimization', false) !== true) {
         return { success: false, code: 'polishing_disabled', error: 'AI 潤稿已關閉' };
@@ -143,9 +229,7 @@ class AITextProcessor {
       const polishingPrompt = isTranscriptPolishing
         ? await this.getTranscriptPolishingPrompt()
         : DEFAULT_TRANSCRIPT_POLISHING_PROMPT;
-      const adapter = config.provider === "ollama"
-        ? this.adapters.ollama
-        : this.adapters.openAICompatible;
+      const adapter = this._adapter(config.provider);
       const { PROFILES, appendData, withinBudget } = require('./polishingContext');
       const savedProfile = await this.databaseManager.getSetting('writing_profile', 'neutral');
       const wordScope = this.wordScopes?.get(scopeHandle);
@@ -167,8 +251,8 @@ class AITextProcessor {
             const calibration = await this.databaseManager.getSetting('context_budget_v1', null);
             let current = null;
             if (calibration) {
-              try { current = await this.ollamaRuntime.fetchJson('/api/tags', { signal: controller.signal }); }
-              catch { controller.signal.throwIfAborted(); }
+              try { current = await this.ollamaRuntime.fetchJson('/api/tags', { signal: requestSignal }); }
+              catch { requestSignal.throwIfAborted(); }
             }
             const digest = current?.models?.find(m => m.name === config.model || m.model === config.model)?.digest;
             if (calibration?.digest && calibration.digest === digest) {
@@ -186,13 +270,13 @@ class AITextProcessor {
         }
         this.latencyManager?.record(metricId, 'context', contextStatus === 'available' ? 'success' : 'skipped', contextStatus === 'available' ? require('node:perf_hooks').performance.now() - started : null);
       }
-      this.latencyManager?.classify(metricId, config.provider === 'ollama' ? 'ollama' : 'openai_compatible');
-      controller.signal.throwIfAborted();
+      this.latencyManager?.classify(metricId, PROVIDERS[config.provider].latency);
+      requestSignal.throwIfAborted();
       const result = await adapter.process({
         ...config,
         messages,
         timeoutMs: 60000,
-        signal: controller.signal,
+        signal: requestSignal,
         ...(usedExternalContext ? { maxOutputTokens: 512 } : {}),
       });
 
@@ -205,14 +289,15 @@ class AITextProcessor {
         };
       }
 
-      controller.signal.throwIfAborted();
+      requestSignal.throwIfAborted();
 
-      if (!result.success) return result;
+      const providerMetadata = { provider: config.provider, local: PROVIDERS[config.provider].local };
+      if (!result.success) return { ...result, ...providerMetadata };
       const finalText = this._stripAIPreamble(result.text);
       if (!finalText) {
         return { success: false, error: "AI 未回傳可用文字", code: "invalid_response" };
       }
-      return { ...result, text: finalText, contextStatus, writingProfile: profile };
+      return { ...result, ...providerMetadata, text: finalText, contextStatus, writingProfile: profile };
     } catch (error) {
       if (this.stopping) {
         return {
@@ -221,6 +306,9 @@ class AITextProcessor {
           code: "runtime_stopping",
           cancelled: true,
         };
+      }
+      if (signal?.aborted) {
+        return { success: false, code: 'cancelled', error: '文字處理已取消', cancelled: true };
       }
       if (controller.signal.aborted) {
         return { success: false, code: 'polishing_disabled', error: 'AI 潤稿已關閉' };
@@ -251,9 +339,8 @@ class AITextProcessor {
     this.requests.add(controller);
     try {
       const config = await this._loadConfig(testConfig);
-      const adapter = config.provider === "ollama"
-        ? this.adapters.ollama
-        : this.adapters.openAICompatible;
+      if (config.provider === 'apple_on_device') return await this.getApplePolishingStatus({ signal: controller.signal });
+      const adapter = this._adapter(config.provider);
       controller.signal.throwIfAborted();
       const result = await adapter.process({
         ...config,
@@ -264,10 +351,12 @@ class AITextProcessor {
       controller.signal.throwIfAborted();
 
       if (!result.success) {
-        return { available: false, error: result.error, details: result.error };
+        return { available: false, provider: config.provider, local: PROVIDERS[config.provider].local, code: result.code, error: result.error, details: result.error };
       }
       return {
         available: true,
+        provider: config.provider,
+        local: PROVIDERS[config.provider].local,
         model: config.model,
         status: "connected",
         response: result.text,
@@ -275,7 +364,7 @@ class AITextProcessor {
         details: `成功連線到 ${config.model}`,
       };
     } catch (error) {
-      return { available: false, error: error.message, details: error.message };
+      return { available: false, code: error.code || 'provider_error', error: error.message, details: error.message };
     } finally {
       this.requests.delete(controller);
     }
@@ -332,14 +421,17 @@ class AITextProcessor {
     this.stopping = true;
     for (const controller of this.requests) controller.abort();
     this.ollamaRuntime.shutdown();
+    this.adapters.appleOnDevice?.shutdown?.();
   }
 
   disableOptimization() {
     for (const controller of this.requests) controller.abort();
-    return this.ollamaRuntime.releaseResources();
+    return Promise.all([this.ollamaRuntime.releaseResources(), this.adapters.appleOnDevice?.releaseResources?.()]);
   }
 }
 
 module.exports = AITextProcessor;
 module.exports.inferLegacyProvider = inferLegacyProvider;
 module.exports.MAX_TRANSCRIPT_CHARS = MAX_TRANSCRIPT_CHARS;
+module.exports.PROVIDERS = PROVIDERS;
+module.exports.providerDefinition = providerDefinition;

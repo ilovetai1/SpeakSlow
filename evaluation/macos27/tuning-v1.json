@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "suite": "speakslow-macos27-polishing-tuning",
+  "locale": "zh-TW",
+  "cases": [
+    {
+      "id": "tune-negation-self-correction-3500",
+      "category": ["number", "negation", "self_correction", "critical"],
+      "raw_asr": "這個費用是三萬不是不是是三千五百元我們不要上線等測試通過再說",
+      "reference": "這個費用是三千五百元。我們不要上線，等測試通過再說。",
+      "assertions": {
+        "must_contain_all": ["三千五百", "不要上線", "測試通過"],
+        "must_not_contain_any": ["現在上線"],
+        "must_match_all": ["(?:不要|不得)上線"],
+        "must_not_match_any": ["三萬[，,、\\s]*(?:而)?不是(?:是)?三千五百", "費用(?:是|為)三萬(?:[。！]|$)"]
+      }
+    },
+    {
+      "id": "tune-date-correction",
+      "category": ["date", "self_correction"],
+      "raw_asr": "會議是二零二六年十一月二日不對改成十一月三日下午兩點",
+      "reference": "會議改成 2026 年 11 月 3 日下午 2 點。",
+      "assertions": {
+        "must_contain_all": [],
+        "must_not_contain_any": [],
+        "must_match_all": ["(?:11 ?月 ?3 ?日|十一月三日)", "(?:下午 ?2 ?點|下午兩點)"],
+        "must_not_match_any": ["(?:11 ?月 ?2 ?日|十一月二日)(?:[。！]|$)"]
+      }
+    },
+    {
+      "id": "tune-name-preservation",
+      "category": ["name", "self_correction"],
+      "raw_asr": "請找林冠宇不是林冠瑜確認 ECOCO 的排程",
+      "reference": "請找林冠宇確認 ECOCO 的排程。",
+      "assertions": {
+        "must_contain_all": ["林冠宇", "ECOCO"],
+        "must_not_contain_any": [],
+        "must_not_match_any": ["(?:請找|找)林冠瑜(?:確認|處理|負責)"]
+      }
+    },
+    {
+      "id": "tune-mixed-language",
+      "category": ["mixed_language", "product_term"],
+      "raw_asr": "請把 pull request 保留在 draft 等 CI green 再 merge",
+      "reference": "請把 pull request 保留在 draft，等 CI green 再 merge。",
+      "assertions": {
+        "must_contain_all": ["pull request", "draft", "CI", "merge"],
+        "must_not_contain_any": []
+      }
+    },
+    {
+      "id": "tune-homophone-counterexample",
+      "category": ["homophone", "counterexample"],
+      "raw_asr": "這份權限只給唯讀不要寫入資料庫",
+      "reference": "這份權限只給唯讀，不要寫入資料庫。",
+      "assertions": {
+        "must_contain_all": ["唯讀"],
+        "must_not_contain_any": ["已讀", "允許寫入"],
+        "must_match_all": ["(?:不要|不得|禁止)寫入"]
+      }
+    }
+  ]
+}

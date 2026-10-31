@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { AppleSpeechManager } = require('../src/helpers/appleSpeechManager');
@@ -49,6 +50,23 @@ test('native modules switch, compare identical real-time PCM and recover after c
   if (process.env.SPEAKSLOW_NATIVE_SPEECH_TEST_REPORT) {
     const output = path.resolve(process.env.SPEAKSLOW_NATIVE_SPEECH_TEST_REPORT);
     fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.writeFileSync(output, JSON.stringify({ scope: 'Native production helper/coordinator, explicit audio fixture, no microphone/user DB/paste; not packaged Electron acceptance.', switches, pair, cancellation: 'passed', retry: 'passed', selectedAfter: manager.profile }, null, 2));
+    const helperPath = path.resolve(__dirname, '../native/build/apple-speech');
+    fs.writeFileSync(output, JSON.stringify({
+      scope: 'Native production helper/coordinator, explicit audio fixture, no microphone/user DB/paste; not packaged Electron acceptance.',
+      environment: {
+        platform: process.platform,
+        arch: process.arch,
+        osRelease: os.release(),
+        osVersion: os.version(),
+        cpu: os.cpus()[0]?.model || null,
+      },
+      helper: { path: helperPath, sha256: createHash('sha256').update(fs.readFileSync(helperPath)).digest('hex') },
+      audio: { path: path.resolve(audioFile), sha256: pair.audioSha256 },
+      switches,
+      pair,
+      cancellation: 'passed',
+      retry: 'passed',
+      selectedAfter: manager.profile,
+    }, null, 2));
   }
 });

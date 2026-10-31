@@ -22,7 +22,7 @@ function fixture(t, profile = 'responsive') {
     async cancel() {}, async dispose() {},
     async transcribeAudio(bytes, options) { calls.push(['transcribe', bytes, options]); return { success: true, text: options.appleProfile === 'dictation' ? '頁面，程式碼。' : '頁麵，城市碼。', duration: 1, timings: { prepareMs: 2, firstTextMs: 300, audioEndToFinalMs: 20 } }; },
   });
-  const manager = new SpeechEngineManager({ database, apple, sherpa: {}, audioStore: { createTempAudioFile: () => { throw Error('must not save audio'); } }, textUtilities: { applyEmoji: () => { throw Error('must not post-process'); } } });
+  const manager = new SpeechEngineManager({ database, apple, sherpa: {}, audioStore: { createTempAudioFile: () => { throw Error('must not save audio'); } }, textUtilities: { applyEmoji: () => { throw Error('must not post-process'); } }, platform: 'darwin', arch: 'arm64', release: '26.0.0' });
   return { manager, apple, database, settings, calls, audio, file };
 }
 test('Dictation is explicit, persists, freezes for jobs and has its own latency group', async t => {

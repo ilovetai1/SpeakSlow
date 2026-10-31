@@ -4,6 +4,7 @@ const STAGES = ['capture', 'asr', 'polish', 'history_save', 'paste_command', 'co
 const OUTCOMES = ['success', 'failed', 'cancelled', 'skipped', 'missing'];
 const ASR_ENGINES = ['sherpa', 'apple', 'unknown'];
 const ASR_PROFILES = ['standard', 'fast', 'streaming', 'accurate', 'responsive', 'dictation', 'unknown'];
+const PROVIDERS = ['apple_on_device', 'ollama', 'openai_compatible', 'none', 'unknown'];
 const DAYS = 7 * 86400000;
 const choose = (value, allowed, fallback = 'unknown') => allowed.includes(value) ? value : fallback;
 function observation(stage, outcome, duration) {
@@ -39,7 +40,7 @@ class LatencyManager {
       if (!Number.isFinite(x.createdAt) || !/^[a-f0-9-]{36}$/i.test(x.payload?.id)) return false;
       const p = x.payload;
       if (!legacy && (!ASR_ENGINES.includes(p.asrEngine) || !ASR_PROFILES.includes(p.asrProfile))) return false;
-      if (!['offline', 'streaming', 'command', 'unknown'].includes(p.mode) || !['ollama', 'openai_compatible', 'none', 'unknown'].includes(p.provider) || !['cold', 'warm', 'unknown'].includes(p.temperature)) return false;
+      if (!['offline', 'streaming', 'command', 'unknown'].includes(p.mode) || !PROVIDERS.includes(p.provider) || !['cold', 'warm', 'unknown'].includes(p.temperature)) return false;
       return Array.isArray(p.observations) && p.observations.length <= STAGES.length && new Set(p.observations.map(o => o.stage)).size === p.observations.length && p.observations.every(o => { observation(o.stage, o.outcome, o.duration); return Object.keys(o).every(k => ['stage', 'outcome', 'duration'].includes(k)); }) && Object.keys(p).every(k => (legacy ? ['id', 'mode', 'provider', 'temperature', 'observations'] : ['id', 'mode', 'provider', 'temperature', 'observations', 'asrEngine', 'asrProfile']).includes(k));
     } catch { return false; }
   }
@@ -65,7 +66,7 @@ class LatencyManager {
     return true;
   }
   classifyASR(id, engine, profile) { const s = this.active.get(id); if (s) { s.asrEngine = choose(engine, ASR_ENGINES); s.asrProfile = choose(profile, ASR_PROFILES); } }
-  classify(id, provider) { const s = this.active.get(id); if (s) s.provider = choose(provider, ['ollama', 'openai_compatible', 'none']); }
+  classify(id, provider) { const s = this.active.get(id); if (s) s.provider = choose(provider, PROVIDERS); }
   finish(id, outcome = 'missing') {
     const s = this.active.get(id); if (!s || !this.enabled) return false;
     this.active.delete(id);

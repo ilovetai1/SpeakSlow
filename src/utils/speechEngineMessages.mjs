@@ -1,7 +1,7 @@
 const reasons = {
   speech_busy: '上一個錄音或轉錄工作仍在處理，完成後才能切換。',
   speech_not_ready: '語音引擎尚未就緒。',
-  platform_unsupported: 'Apple 引擎需要 macOS 26 以上及 Apple Silicon。',
+  platform_unsupported: 'Apple 引擎需要 macOS 27 以上及 Apple Silicon。',
   device_unsupported: '這台裝置不支援 Apple 語音轉寫模型。',
   locale_unsupported: '此裝置目前未提供台灣繁體中文模型。',
   assets_unsupported: '此裝置無法使用所需的 Apple 模型資產。',

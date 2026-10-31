@@ -1,5 +1,10 @@
 import React from "react";
 import { createPcmTransport } from '../utils/pcmTransport.mjs';
+import {
+  confirmFileTranscriptPolish,
+  previewFileTranscriptPolish,
+  resetFileTranscriptPolish,
+} from '../utils/fileTranscriptPolishing.mjs';
 import { useTranslation } from "../i18n";
 
 // 把 Float32 PCM 重採樣到 16kHz、包成 16-bit mono WAV（與錄音用同一套規格）
@@ -52,6 +57,10 @@ export default function TranscribeModal({ onClose }) {
   const [status, setStatus] = React.useState("idle"); // idle|decoding|transcribing|done|error
   const [progress, setProgress] = React.useState(0);
   const [transcript, setTranscript] = React.useState("");
+  const [rawTranscript, setRawTranscript] = React.useState("");
+  const [polishCandidate, setPolishCandidate] = React.useState("");
+  const [polishStatus, setPolishStatus] = React.useState("idle"); // idle|loading|ready|accepted|error
+  const [polishError, setPolishError] = React.useState("");
   const [fileName, setFileName] = React.useState("");
   const [errMsg, setErrMsg] = React.useState("");
   const [mode, setMode] = React.useState("txt"); // txt | srt
@@ -59,12 +68,15 @@ export default function TranscribeModal({ onClose }) {
   const jobRef = React.useRef(null);
   const fileInputRef = React.useRef(null);
   const modeRef = React.useRef("txt");
+  const polishGenerationRef = React.useRef(0);
   modeRef.current = mode;
 
   const run = React.useCallback(async (file) => {
     if (!file || jobRef.current) return;
     cancelRef.current = false; jobRef.current = { starting: true };
-    setFileName(file.name); setStatus('decoding'); setTranscript(''); setProgress(0); setErrMsg('');
+    polishGenerationRef.current += 1;
+    setFileName(file.name); setStatus('decoding'); setTranscript(''); setRawTranscript(''); setProgress(0); setErrMsg('');
+    setPolishCandidate(''); setPolishStatus('idle'); setPolishError('');
     let job;
     try {
       job = await window.electronAPI.beginSpeechJob('file'); jobRef.current = job;
@@ -97,7 +109,10 @@ export default function TranscribeModal({ onClose }) {
         if (srt) {
           if (!Array.isArray(result.segments) || result.segments.some(g => !Number.isFinite(g.start) || !Number.isFinite(g.end) || g.end <= g.start)) throw new Error('無可靠時間軸，未產生SRT');
           setTranscript(buildSrt(result.segments));
-        } else setTranscript(result.text);
+        } else {
+          setTranscript(result.text);
+          setRawTranscript(result.text);
+        }
       } else {
         const chunkSamples = CHUNK_SEC * srcRate;
         const totalChunks = Math.max(1, Math.ceil(data.length / chunkSamples));
@@ -118,6 +133,7 @@ export default function TranscribeModal({ onClose }) {
           } else { out += (out ? '\n' : '') + result.text.trim(); setTranscript(out); }
           setProgress(Math.round((i + 1) / totalChunks * 100));
         }
+        if (!srt) setRawTranscript(out);
       }
       setProgress(100); setStatus('done');
     } catch (issue) {
@@ -131,6 +147,7 @@ export default function TranscribeModal({ onClose }) {
 
   React.useEffect(() => () => {
     cancelRef.current = true;
+    polishGenerationRef.current += 1;
     if (jobRef.current?.id) window.electronAPI.endSpeechJob(jobRef.current.id, true).catch(() => {});
   }, []);
 
@@ -154,6 +171,42 @@ export default function TranscribeModal({ onClose }) {
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) { /* ignore */ }
+  };
+
+  const requestPolishPreview = async () => {
+    const generation = ++polishGenerationRef.current;
+    setPolishStatus('loading');
+    setPolishError('');
+    setPolishCandidate('');
+    const result = await previewFileTranscriptPolish({
+      rawText: rawTranscript,
+      mode,
+      processText: (text) => window.electronAPI.previewFilePolish(text),
+      isCancelled: () => generation !== polishGenerationRef.current,
+    });
+    if (generation !== polishGenerationRef.current || result.cancelled) return;
+    if (!result.success) {
+      setPolishStatus('error');
+      setPolishError(result.error || t('transcribe.polishFailed'));
+      return;
+    }
+    setPolishCandidate(result.candidateText);
+    setPolishStatus('ready');
+  };
+
+  const confirmPolishPreview = () => {
+    const result = confirmFileTranscriptPolish(rawTranscript, polishCandidate);
+    if (!result.success) return;
+    setTranscript(result.text);
+    setPolishStatus('accepted');
+  };
+
+  const resetPolishPreview = () => {
+    polishGenerationRef.current += 1;
+    setTranscript(resetFileTranscriptPolish(rawTranscript));
+    setPolishCandidate('');
+    setPolishStatus('idle');
+    setPolishError('');
   };
 
   const busy = status === "decoding" || status === "transcribing";
@@ -180,7 +233,7 @@ export default function TranscribeModal({ onClose }) {
             {[["txt", t("transcribe.outTxt")], ["srt", t("transcribe.outSrt")]].map(([k, label]) => (
               <button
                 key={k}
-                onClick={() => setMode(k)}
+                onClick={() => { setMode(k); resetPolishPreview(); }}
                 className={`flex-1 px-3 py-1.5 rounded-md transition-colors ${
                   mode === k
                     ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-medium shadow-sm"
@@ -230,6 +283,22 @@ export default function TranscribeModal({ onClose }) {
           style={{ whiteSpace: "pre-wrap" }}
         />
 
+        {mode === 'txt' && polishCandidate && polishStatus !== 'accepted' && (
+          <div className="shrink-0 space-y-1">
+            <div className="text-xs font-medium text-gray-600 dark:text-gray-300">{t('transcribe.polishCandidate')}</div>
+            <textarea
+              value={polishCandidate}
+              readOnly
+              aria-label={t('transcribe.polishCandidate')}
+              className="h-28 w-full resize-none rounded-xl border border-blue-200 dark:border-blue-700 bg-blue-50/60 dark:bg-blue-950/30 p-3 text-sm text-gray-800 dark:text-gray-200 leading-relaxed outline-none"
+            />
+          </div>
+        )}
+
+        {polishStatus === 'error' && (
+          <div className="shrink-0 text-xs text-red-500">{polishError}</div>
+        )}
+
         {/* 動作列 */}
         <div className="shrink-0 flex items-center gap-2">
           {busy ? (
@@ -240,6 +309,24 @@ export default function TranscribeModal({ onClose }) {
             <button onClick={() => fileInputRef.current?.click()} className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300">
               {t("transcribe.another")}
             </button>
+          )}
+          {mode === 'txt' && status === 'done' && rawTranscript && polishStatus !== 'ready' && (
+            <button
+              disabled={polishStatus === 'loading' || typeof window.electronAPI?.previewFilePolish !== 'function'}
+              onClick={requestPolishPreview}
+              className="px-3 py-1.5 text-sm rounded-lg border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 disabled:opacity-40"
+            >
+              {polishStatus === 'loading' ? t('transcribe.polishing') : t('transcribe.previewPolish')}
+            </button>
+          )}
+          {mode === 'txt' && polishStatus === 'ready' && (
+            <>
+              <button onClick={resetPolishPreview} className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300">{t('transcribe.resetRaw')}</button>
+              <button onClick={confirmPolishPreview} className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white">{t('transcribe.acceptPolish')}</button>
+            </>
+          )}
+          {mode === 'txt' && polishStatus === 'accepted' && (
+            <button onClick={resetPolishPreview} className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300">{t('transcribe.resetRaw')}</button>
           )}
           <div className="flex-1" />
           <button disabled={!transcript} onClick={copyAll} className="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-40">{t("transcribe.copy")}</button>

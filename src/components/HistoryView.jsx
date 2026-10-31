@@ -181,7 +181,14 @@ export const HistoryView = () => {
   const [playingId, setPlayingId] = React.useState(null); // 正在播放的那筆 id
   const [repolishingId, setRepolishingId] = React.useState(null);
   const [repolishPreview, setRepolishPreview] = React.useState(null);
+  const repolishGeneration = React.useRef(0);
+  const applyingRepolish = React.useRef(false);
   const audioRef = React.useRef(null);
+
+  React.useEffect(() => () => {
+    repolishGeneration.current += 1;
+    window.electronAPI?.cancelHistoryPolish?.().catch(() => {});
+  }, []);
 
   // 播放 / 停止某筆錄音（讀 WAV → base64 → Audio 播）
   const handlePlay = async (item) => {
@@ -305,33 +312,51 @@ export const HistoryView = () => {
 
   const handleRepolish = async (item) => {
     if (repolishingId || !window.electronAPI?.previewHistoryPolish) return;
+    const generation = ++repolishGeneration.current;
     setRepolishingId(item.id);
     try {
       const result = await window.electronAPI.previewHistoryPolish(item.id);
+      if (generation !== repolishGeneration.current || result?.cancelled) return;
       setRepolishPreview(result?.success
         ? { id: item.id, ...result }
         : { id: item.id, error: result?.error || '潤稿失敗' });
     } catch (error) {
-      setRepolishPreview({ id: item.id, error: error.message || '潤稿失敗' });
+      if (generation === repolishGeneration.current) setRepolishPreview({ id: item.id, error: error.message || '潤稿失敗' });
     } finally {
-      setRepolishingId(null);
+      if (generation === repolishGeneration.current) setRepolishingId(null);
     }
   };
 
-  const confirmRepolish = async () => {
-    if (!repolishPreview?.candidateText) return;
-    const result = await window.electronAPI?.applyHistoryPolish?.(
-      repolishPreview.id,
-      repolishPreview.candidateText,
-    );
-    if (!result?.success) {
-      setRepolishPreview((current) => ({ ...current, error: result?.error || '更新失敗' }));
-      return;
-    }
-    setTranscriptions((current) => current.map((item) => item.id === repolishPreview.id
-      ? { ...item, text: result.text, processed_text: null, finalText: result.text }
-      : item));
+  const cancelRepolish = () => {
+    repolishGeneration.current += 1;
+    setRepolishingId(null);
     setRepolishPreview(null);
+    window.electronAPI?.cancelHistoryPolish?.().catch(() => {});
+  };
+
+  const confirmRepolish = async () => {
+    if (!repolishPreview?.candidateToken || applyingRepolish.current) return;
+    const generation = repolishGeneration.current;
+    applyingRepolish.current = true;
+    try {
+      const result = await window.electronAPI?.applyHistoryPolish?.(
+        repolishPreview.id,
+        repolishPreview.candidateToken,
+      );
+      if (generation !== repolishGeneration.current) return;
+      if (!result?.success) {
+        setRepolishPreview((current) => current && ({ ...current, error: result?.error || '更新失敗' }));
+        return;
+      }
+      setTranscriptions((current) => current.map((item) => item.id === repolishPreview.id
+        ? { ...item, text: result.text, processed_text: null, finalText: result.text }
+        : item));
+      setRepolishPreview(null);
+    } catch (error) {
+      if (generation === repolishGeneration.current) setRepolishPreview(current => current && ({ ...current, error: error.message || '更新失敗' }));
+    } finally {
+      applyingRepolish.current = false;
+    }
   };
 
   const handleRetranscribe = async (id, model) => {
@@ -613,7 +638,7 @@ export const HistoryView = () => {
               </div>
             )}
             <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => setRepolishPreview(null)} className="rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">
+              <button type="button" onClick={cancelRepolish} className="rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">
                 取消
               </button>
               {!repolishPreview.error && (

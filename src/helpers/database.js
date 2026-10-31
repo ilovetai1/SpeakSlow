@@ -1,12 +1,14 @@
 const Database = require("better-sqlite3");
 const path = require("path");
 const fs = require("fs");
+const { isMacOS27OrNewer } = require('./macos27Support');
 
 class DatabaseManager {
-  constructor(logger = null) {
+  constructor(logger = null, { platformSupported = isMacOS27OrNewer } = {}) {
     this.db = null;
     this.dbPath = null;
     this.logger = logger;
+    this.applePlatformSupported = platformSupported;
   }
 
   initialize(dataDirectory) {
@@ -18,8 +20,16 @@ class DatabaseManager {
       fs.mkdirSync(dir, { recursive: true });
     }
 
+    const newInstallation = !fs.existsSync(this.dbPath);
     this.db = new Database(this.dbPath);
     this.createTables();
+    // A missing provider in an existing database is a legacy setting, not a new install.
+    if (newInstallation && this.applePlatformSupported()) {
+      this.db.transaction(() => {
+        this.setSetting('ai_provider', 'apple_on_device');
+        this.setSetting('enable_ai_optimization', false);
+      })();
+    }
   }
 
   createTables() {

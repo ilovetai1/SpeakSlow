@@ -114,7 +114,7 @@ async function runSpeechAcceptance(context, plan) {
       result.checks.push({ name: 'long audio original exact keyword accuracy assertion', passed: ['回收站', 'CPU', '台中'].every(word => longResult.text.includes(word)), informational: true });
       result.checks.push({ name: 'continuous audio beyond 60s retains ordered sections and complete native subtitle timeline', passed: longResult.success && markers.every((position, index) => position >= 0 && (!index || position > markers[index - 1])) && longResult.duration > 60 && longResult.segments.length > 0 && longResult.segments.at(-1).end > 60 && completeText(longResult.segments.map(segment => segment.text).join('')) === completeText(longResult.text) && longResult.segments.every(segment => segment.end > segment.start && segment.end <= longResult.duration + .1), characters: longResult.text.length, segments: longResult.segments.length, duration: longResult.duration });
     }
-    // Real macOS26-compatible AVAudioConverter at common capture rates.
+    // Real macOS 27 AVAudioConverter at common capture rates.
     const clip = JSON.parse(fs.readFileSync(plan.manifest, 'utf8'))[0];
     const source = fs.readFileSync(clip.path).toString('base64');
     for (const rate of [44100, 48000]) {

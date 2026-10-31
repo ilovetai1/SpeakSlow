@@ -6,7 +6,7 @@
 
 **本機中文語音輸入：錄音、辨識、整理文字，再貼到游標位置。**
 
-語音辨識可選 Sherpa（sherpa-onnx）或 Apple 原生引擎；文字潤稿可選本機 Ollama 或遠端 AI 服務。
+Mac 版使用 Apple 原生語音辨識；Windows／Linux 保留 Sherpa（sherpa-onnx）。文字潤稿可選 Apple 系統模型、本機 Ollama 或遠端 AI 服務。
 
 [本 fork](https://github.com/ilovetai1/SpeakSlow) · [最新原始碼（main）](https://github.com/ilovetai1/SpeakSlow/tree/main) · [上游專案](https://github.com/Jeffrey0117/SpeakSlow)
 
@@ -16,12 +16,12 @@
 
 這是 `ilovetai1/SpeakSlow` fork 的 **2.1.0 開發版原始碼**。目前包含：
 
-- Apple／Sherpa 本機辨識引擎切換，保留 Sherpa 為預設。
-- Ollama 模型選擇、錄音後潤稿、自訂提示詞與歷史重新潤稿。
+- macOS 27 Apple Silicon 固定使用 Apple 原生辨識；Windows／Linux 保留 Sherpa 路徑。
+- Apple 系統語言模型、Ollama、遠端 AI、自訂提示詞與歷史重新潤稿；潤稿預設關閉。
 - 寫作格式、預設關閉的情境潤稿與本機改錯學習，以及按引擎分群的本機延遲統計。
 - 手動啟動、可停止且有時間上限的麥克風音量測試。
 
-核心功能已實作並在 Apple Silicon Mac 安裝測試；**完整實機驗收與正式發行尚未完成**。macOS 26 實機、首次權限、跨 App 貼上與人工長口述斷句等限制，請見下方驗證紀錄。
+macOS 27 原生 helper 與隔離測試已實作，候選版本已在本機安裝並完成啟動、重啟、Apple-only readiness 與唯一安裝副本驗證；**這仍不是正式發行驗收**。首次權限、實體麥克風、跨 App 貼上、人工長口述斷句及 Developer ID／公證仍未完成。
 
 - **取得本次功能**：使用本 fork 的 `main` 分支，或由維護者提供明確從此分支建置的安裝檔。
 - **本 fork 安裝檔**：查看 [Releases](https://github.com/ilovetai1/SpeakSlow/releases)。截至 2026-10-14 尚未建立 Release；推送原始碼不會自動產生新版安裝檔。
@@ -29,12 +29,12 @@
 
 ## 選擇語音辨識引擎
 
-開啟「設定 → 一般設定 → 語音辨識引擎」，選擇引擎並等待顯示「已就緒」。缺模型時，按「下載所需模型」。錄音、辨識、潤稿、保存、貼上與檔案／歷史工作進行中不能切換。
+開啟「設定 → 一般設定 → 語音辨識引擎」，等待顯示「已就緒」。Mac 不提供 Sherpa／Zipformer 選項，可選 Apple 的三種辨識模式；缺模型時按「下載所需模型」。錄音、辨識、潤稿、保存、貼上與檔案／歷史工作進行中不能切換模式。
 
 | 項目 | 現有本機引擎（Sherpa） | Apple 原生引擎 |
 | --- | --- | --- |
-| 預設 | 是 | 由使用者選擇 |
-| 平台 | 依 SpeakSlow 對應平台／架構建置；目前主要實測 macOS Apple Silicon | 本版限 macOS 26 以上、Apple Silicon；runtime 目前於 macOS 27.0.1 驗證 |
+| 預設 | Windows／Linux 保留 | Mac 唯一 ASR 路徑 |
+| 平台 | Windows／Linux；不作為 Mac fallback | 本版限 macOS 27 以上、Apple Silicon；runtime 目前於 macOS 27 驗證 |
 | 語言與模型 | Paraformer；沿用繁體轉換、熱詞與效能設定 | 固定台灣繁體中文 `zh-TW`，由 Apple 系統管理模型 |
 | 標點與排版 | 本機標點模型、依停頓分行與規則列點設定 | 保留 Apple 原生標點；Sherpa 熱詞、分行及列點設定不適用 |
 | 共用功能 | 辨識後字典、AI 潤稿、歷史、檔案轉錄與貼上設定 | 同左；尚未提供 Apple 原生熱詞或自訂語言模型 |
@@ -49,7 +49,7 @@ Apple 提供三種辨識模式：
 
 預覽顯示在 SpeakSlow 內，定稿後才進入共用輸出流程。引擎啟動或辨識失敗會明示錯誤，不自動改用另一引擎或語言。Apple 模型下載屬共享系統服務，停止等待不保證背景下載也停止。
 
-本機配對測試顯示 Apple 的可量測記憶體與 CPU 使用較低，但這批繁中語料的錯字率與斷句沒有優於 Sherpa，因此未改變預設引擎。ANE 活動已觀察到；SDK 排程由 Apple 決定，沒有指定核心數或提高使用率的開關。這些結果不代表已達到 iPhone 體驗。詳見 [Apple 引擎說明](docs/APPLE_ENGINE_IMPLEMENTATION.md)及[辨識、斷句與資源測試報告](docs/APPLE_ENGINE_ACCEPTANCE_2026-10-14.md)。
+舊版配對測試顯示 Apple 的可量測記憶體與 CPU 使用較低，但那批繁中語料的錯字率與斷句沒有優於 Sherpa。新版本改採 Mac Apple-only 是產品邊界變更，不是新的正確率優勢證明。ANE 活動已觀察到；SDK 排程由 Apple 決定，沒有指定核心數或提高使用率的開關。詳見 [Apple 引擎說明](docs/APPLE_ENGINE_IMPLEMENTATION.md)及[歷史辨識報告](docs/APPLE_ENGINE_ACCEPTANCE_2026-10-14.md)。
 
 ## 分享給同仁前必讀
 
@@ -58,11 +58,12 @@ Apple 提供三種辨識模式：
 | 要使用的功能 | 同仁電腦需要準備 |
 | --- | --- |
 | Sherpa 錄音、辨識、貼上 | 對應平台／架構的 SpeakSlow 安裝檔、Sherpa 後端與模型，以及麥克風／貼上權限 |
-| Apple 錄音、辨識、貼上 | macOS 26 以上、Apple Silicon 的 SpeakSlow 建置、已就緒的 Apple 模型，以及麥克風／貼上權限；終端使用者不需要 Xcode |
+| Apple 錄音、辨識、貼上 | macOS 27 以上、Apple Silicon 的 SpeakSlow 建置、已就緒的 Apple 模型，以及麥克風／貼上權限；終端使用者不需要 Xcode |
+| Apple 系統模型潤稿 | 同上，並需 Apple Intelligence 與 `zh-TW` 系統模型可用；不需要 API key，失敗不會切換 provider |
 | Ollama 本機潤稿 | 上述條件，加上另外安裝的 Ollama、已下載的本機文字生成模型，以及可連線的本機服務 |
 | 遠端 AI 潤稿 | 可用的網路、服務網址、模型與該服務的 API key；文字會送至所選服務 |
 
-未安裝 Ollama 時，可先關閉「潤稿」使用基本辨識。若已開啟潤稿但服務或模型不可用，錄音流程會顯示「潤稿失敗，已使用原始文字」；這代表辨識有結果，**不代表 AI 潤稿成功**。
+潤稿預設關閉。若已開啟但 provider 或模型不可用，錄音流程會保留完整原文並顯示失敗；這代表辨識有結果，**不代表 AI 潤稿成功**。目前 macOS 27 `core_advanced3` 的固定語料仍出現金額／否定反轉、姓名自我修正反轉及長稿內容遺失，因此不得自動開啟。
 
 ### macOS 安裝與權限
 
@@ -70,7 +71,7 @@ Apple 提供三種辨識模式：
 2. 在「系統設定 → 隱私權與安全性」允許麥克風；全域操作與自動貼上需依 App 提示授予「輔助使用」權限。
 3. 先關閉潤稿，錄一小段話，確認能辨識並貼到文字編輯器，再設定 Ollama。
 
-目前本機驗證使用 macOS 27.0.1、Apple Silicon Mac。2026-10-14 安裝的測試版使用 **ad-hoc 簽章**，簽章完整性檢查通過；這不是 Developer ID 發行簽章或公證證據。**尚未完成其他同仁電腦的首次安裝驗證**。
+目前本機驗證使用 macOS 27.0.1、Apple Silicon Mac。2026-10-31 安裝的候選版使用 **ad-hoc 簽章**，簽章、啟動、乾淨重啟與 Apple Speech readiness 檢查通過；這不是 Developer ID 發行簽章或公證證據。**尚未完成其他同仁電腦的首次安裝驗證**。
 
 若 macOS 顯示無法驗證開發者，請依 [Apple 官方開啟說明](https://support.apple.com/en-us/102445)及公司 IT 規範處理。若顯示「已毀損」，應重新核對安裝檔與簽章，不能直接判定只是系統誤擋。正式分發前應完成 [Developer ID 簽章與公證](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)。
 
@@ -165,7 +166,7 @@ cd SpeakSlow
 npm ci
 ```
 
-macOS 另需 Xcode／Command Line Tools 與可編譯 macOS 26 `SpeechAnalyzer` API 的 SDK；本機使用 SDK 27 建置。開發模式首次使用 native helper 前，先執行 `npm run build:context` 與 `npm run build:apple`。這是開發者的建置需求，終端使用者不需要安裝這些工具。
+macOS 另需 Xcode／Command Line Tools 與 macOS 27 SDK。開發模式首次使用 native helper 前，先執行 `npm run build:context`、`npm run build:apple` 與 `npm run build:apple-foundation-models`。這是開發者的建置需求，終端使用者不需要安裝這些工具。
 
 macOS / Linux：
 
@@ -206,7 +207,7 @@ npm run build:renderer
 | Windows | `npx electron-builder --win --publish never` |
 | Linux | `npx electron-builder --linux --publish never` |
 
-macOS 的 `build:renderer` 會先編譯 context reader 與 Apple speech helper；非 macOS 會跳過這兩個 helper。`npm run build:mac` 也會依序重建 backend、renderer 再打包，避免使用舊 backend。Apple helper 的 deployment target 為 macOS 26；這不等於已在 macOS 26 實機驗收。
+macOS 的 `build:renderer` 會先編譯 context reader、Apple Speech、Apple Foundation Models 及 window visibility helpers；非 macOS 會跳過這些 helpers。`npm run build:mac` 也會依序重建 backend、renderer 再打包，避免使用舊 backend。Mac App 與兩個 Apple 模型 helpers 的 deployment target 為 macOS 27，封裝架構為 arm64。
 
 產物位於專案的 `dist` 目錄。macOS 建置另包含原生 helper；Apple 語音模型由系統管理，不隨 App 內嵌。正確建置的安裝檔包含 PyInstaller 語音後端、Paraformer／Paraformer-small、INT8 標點模型與 VAD；Ollama 程式與 LLM 模型仍需另外安裝。串流 Zipformer 與 Whisper 不在目前 `extraResources` 預載清單中。
 
@@ -258,9 +259,12 @@ SQLite 測試在一般 Node 環境可能因 Electron ABI 跳過，需用相符�
 
 - [x] 原生 Ollama 模型探索、選擇與 Apple Silicon 按需啟動。
 - [x] 可編輯的共用潤稿提示詞，以及歷史重新潤稿預覽。
-- [x] Apple／Sherpa 選擇、Speech／Dictation 三種模式、同音檔比較與共用轉錄流程。
+- [x] macOS 27 Apple-only 路由、Speech／Dictation 三種模式、同音檔比較與共用轉錄流程。
+- [x] Apple 系統語言模型 provider、TXT 預覽／確認／還原與 fail-closed runtime。
 - [x] 麥克風測試手動啟動、停止及隱藏時釋放。
-- [ ] macOS 26 實機、真人長口述斷句與跨 App 停止到貼上的完整驗收。
+- [x] macOS 27 已安裝版的唯一副本、啟動、重啟、Apple Speech readiness 與 Apple 本機 provider 顯示驗證。
+- [ ] 真人麥克風、首次權限、長口述斷句與跨 App 停止到貼上的完整驗收。
+- [ ] macOS 26／26.4 對照與固定 Ollama digest 評估；目前結論為 `unverified`。
 - [ ] Ollama 與模型的整合安裝引導／一鍵下載。
 - [ ] 本 fork 的安裝檔發佈、macOS Developer ID 簽章與公證。
 - [ ] 在其他同仁電腦及 Windows／Linux 完成首次安裝驗證。

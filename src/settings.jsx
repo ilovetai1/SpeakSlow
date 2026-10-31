@@ -92,6 +92,9 @@ const SettingsPage = () => {
   const [streamingModelPhase, setStreamingModelPhase] = useState(null);
   const [testResult, setTestResult] = useState(null);
   const [storedApiKeyProvider, setStoredApiKeyProvider] = useState(null);
+  const [savedAiProvider, setSavedAiProvider] = useState(null);
+  const [appleStatus, setAppleStatus] = useState(null);
+  const [appleStatusLoading, setAppleStatusLoading] = useState(false);
   const [ollamaModels, setOllamaModels] = useState([]);
   const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false);
   const [ollamaModelsLoaded, setOllamaModelsLoaded] = useState(false);
@@ -202,6 +205,7 @@ const SettingsPage = () => {
           ai_base_url: allSettings.ai_base_url || "https://api.openai.com/v1",
           ai_model: aiProvider === 'ollama'
             ? allSettings.ollama_model || allSettings.ai_model || ''
+            : aiProvider === 'apple_on_device' ? 'system'
             : allSettings.ai_model || "gpt-4o-mini",
           transcript_polishing_prompt: transcriptPolishingPrompt,
           enable_notifications: allSettings.enable_notifications !== false, // 默认为true
@@ -230,6 +234,7 @@ const SettingsPage = () => {
           })()
         };
         setSettings(prev => ({ ...prev, ...loadedSettings }));
+        setSavedAiProvider(aiProvider);
         setStoredApiKeyProvider(allSettings.has_ai_api_key ? aiProvider : null);
         
         // 检查是否使用自定义模型
@@ -255,14 +260,17 @@ const SettingsPage = () => {
       setSaving(true);
       if (window.electronAPI) {
         // 保存每个设置项
-        const enteredApiKey = settings.ai_api_key.trim();
-        if (enteredApiKey) {
-          await window.electronAPI.setSetting('ai_api_key', enteredApiKey);
-          setStoredApiKeyProvider(settings.ai_provider);
+        if (settings.ai_provider !== 'apple_on_device') {
+          const enteredApiKey = settings.ai_api_key.trim();
+          if (enteredApiKey) {
+            await window.electronAPI.setSetting('ai_api_key', enteredApiKey);
+            setStoredApiKeyProvider(settings.ai_provider);
+          }
+          await window.electronAPI.setSetting('ai_base_url', settings.ai_base_url);
+          await window.electronAPI.setSetting('ai_model', settings.ai_model);
         }
-        await window.electronAPI.setSetting('ai_base_url', settings.ai_base_url);
-        await window.electronAPI.setSetting('ai_model', settings.ai_model);
         await window.electronAPI.setSetting('ai_provider', settings.ai_provider);
+        setSavedAiProvider(settings.ai_provider);
         if (settings.ai_provider === 'ollama') {
           await window.electronAPI.setSetting('ollama_model', settings.ai_model);
         }
@@ -330,6 +338,11 @@ const SettingsPage = () => {
   const handleToggleChange = async (key, value) => {
     if (key === 'enable_ai_optimization') {
       try {
+        if (value && savedAiProvider !== settings.ai_provider) throw new Error('請先儲存所選的 AI provider');
+        if (value && settings.ai_provider === 'apple_on_device') {
+          const status = await refreshAppleStatus();
+          if (!status.available) throw new Error(status.error || 'Apple 本機模型目前無法使用');
+        }
         await aiOptimization.updateEnabled(value);
         toast.success(value ? t('notifications.aiEnabled') : t('notifications.aiDisabled'));
       } catch (error) {
@@ -390,6 +403,11 @@ const SettingsPage = () => {
       console.error("保存设置失败:", error);
       toast.error(t('settings.saveFailed'));
     }
+  };
+
+  const applyAppleConfig = () => {
+    setSettings(current => ({ ...current, ai_provider: 'apple_on_device', ai_api_key: '', ai_model: 'system' }));
+    setTestResult(null);
   };
 
   // Gemini（OpenAI 相容端點）
@@ -458,7 +476,7 @@ const SettingsPage = () => {
       // 验证当前输入的配置
       const enteredApiKey = settings.ai_api_key.trim();
       const canUseStoredApiKey = storedApiKeyProvider === settings.ai_provider;
-      if (settings.ai_provider !== 'ollama' && !enteredApiKey && !canUseStoredApiKey) {
+      if (!['ollama', 'apple_on_device'].includes(settings.ai_provider) && !enteredApiKey && !canUseStoredApiKey) {
         setTestResult({
           available: false,
           error: t('settings.configIncompleteDesc'),
@@ -472,7 +490,7 @@ const SettingsPage = () => {
       
       if (window.electronAPI) {
         // 使用当前页面的配置进行测试，而不是已保存的配置
-        const testConfig = {
+        const testConfig = settings.ai_provider === 'apple_on_device' ? { ai_provider: 'apple_on_device' } : {
           ai_provider: settings.ai_provider,
           ai_api_key: enteredApiKey || undefined,
           use_saved_api_key: !enteredApiKey && canUseStoredApiKey,
@@ -481,6 +499,7 @@ const SettingsPage = () => {
         };
         
         const result = await window.electronAPI.checkAIStatus(testConfig);
+        if (settings.ai_provider === 'apple_on_device') setAppleStatus(result);
         setTestResult(result);
         
         if (result.available) {
@@ -506,6 +525,26 @@ const SettingsPage = () => {
       setTesting(false);
     }
   };
+
+  const refreshAppleStatus = async () => {
+    setAppleStatusLoading(true);
+    try {
+      const result = await window.electronAPI?.getApplePolishingStatus?.();
+      const status = result || { available: false, platformSupported: false, code: 'status_unavailable', error: '無法查詢 Apple 本機模型狀態' };
+      setAppleStatus(status);
+      return status;
+    } catch {
+      const status = { available: false, platformSupported: false, code: 'status_unavailable', error: '無法查詢 Apple 本機模型狀態' };
+      setAppleStatus(status);
+      return status;
+    } finally {
+      setAppleStatusLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!loading && (!appleStatus || settings.ai_provider === 'apple_on_device')) refreshAppleStatus();
+  }, [loading, settings.ai_provider]);
 
   const refreshOllamaModels = async () => {
     setOllamaModelsLoading(true);
@@ -1426,7 +1465,7 @@ const SettingsPage = () => {
                    role="switch"
                    id="ai-optimization-toggle"
                    aria-checked={aiOptimization.enabled}
-                   disabled={!aiOptimization.ready || aiOptimization.pending || (settings.ai_provider === 'ollama' && !aiOptimization.enabled && ollamaModelsLoaded && !ollamaModels.some((model) => model.name === settings.ai_model))}
+                   disabled={!aiOptimization.ready || aiOptimization.pending || (!aiOptimization.enabled && (settings.ai_provider !== savedAiProvider || (settings.ai_provider === 'apple_on_device' && (appleStatusLoading || appleStatus?.available !== true)))) || (settings.ai_provider === 'ollama' && !aiOptimization.enabled && ollamaModelsLoaded && !ollamaModels.some((model) => model.name === settings.ai_model))}
                    onClick={() => handleToggleChange('enable_ai_optimization', !aiOptimization.enabled)}
                    className={`${
                      aiOptimization.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
@@ -1440,6 +1479,7 @@ const SettingsPage = () => {
                    />
                  </button>
                </div>
+               {!aiOptimization.enabled && settings.ai_provider !== savedAiProvider && <p className="text-xs text-amber-700 dark:text-amber-400">請先儲存所選的 AI provider，再開啟潤稿。</p>}
 
                <div>
                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1449,14 +1489,17 @@ const SettingsPage = () => {
                    value={settings.ai_provider}
                    onChange={(event) => {
                      const provider = event.target.value;
-                     if (provider === 'ollama') applyOllamaConfig();
+                     if (provider === 'apple_on_device') applyAppleConfig();
+                     else if (provider === 'ollama') applyOllamaConfig();
                      else if (provider === 'deepseek') applyDeepSeekConfig();
                      else if (provider === 'gemini') applyGeminiConfig();
                      else if (provider === 'openai') resetToOpenAI();
-                     else setSettings((current) => ({ ...current, ai_provider: 'custom' }));
+                     else if (provider === 'custom') setSettings((current) => ({ ...current, ai_provider: 'custom' }));
                    }}
                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                  >
+                   {(appleStatus?.platformSupported || settings.ai_provider === 'apple_on_device') && <option value="apple_on_device" disabled={appleStatus?.platformSupported !== true}>Apple（本機）</option>}
+                   {!['apple_on_device', 'ollama', 'deepseek', 'openai', 'gemini', 'custom'].includes(settings.ai_provider) && <option value={settings.ai_provider} disabled>無效 provider：{settings.ai_provider}</option>}
                    <option value="ollama">Ollama（本機）</option>
                    <option value="deepseek">DeepSeek</option>
                    <option value="openai">OpenAI</option>
@@ -1465,7 +1508,7 @@ const SettingsPage = () => {
                  </select>
                </div>
 
-               {settings.ai_provider !== 'ollama' && (<>
+               {!['ollama', 'apple_on_device'].includes(settings.ai_provider) && (<>
                {/* API Key */}
                 <div>
                   <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1517,7 +1560,18 @@ const SettingsPage = () => {
                 </div>
                </>)}
 
-                {settings.ai_provider === 'ollama' ? (
+                {settings.ai_provider === 'apple_on_device' ? (
+                  <div className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 p-3" aria-label="Apple 本機模型狀態">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Apple（本機）・系統管理模型</span>
+                      <button type="button" onClick={refreshAppleStatus} disabled={appleStatusLoading} className="text-xs px-2 py-1 rounded bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 disabled:opacity-50">{appleStatusLoading ? '查詢中…' : '重新查詢'}</button>
+                    </div>
+                    <p className="text-xs">狀態：{appleStatusLoading ? '查詢中' : appleStatus?.available ? '可使用' : '無法使用'}</p>
+                    <p className="text-xs">模型變體：{appleStatus?.modelDisplayName || appleStatus?.variant || '未回報'}；Context：{appleStatus?.contextSize || '未回報'} tokens；語言：{appleStatus?.locale || 'zh-TW'}</p>
+                    {!appleStatusLoading && appleStatus?.available !== true && <p className="text-xs text-red-600 dark:text-red-400" role="status">{appleStatus?.error || 'Apple 本機模型尚未就緒'}{appleStatus?.code ? `（${appleStatus.code}）` : ''}</p>}
+                    <p className="text-xs text-gray-600 dark:text-gray-400">不需要 API key 或服務網址。模型不可用時會回報失敗，不會改送其他 provider。可使用狀態不代表潤稿品質已通過驗收。</p>
+                  </div>
+                ) : settings.ai_provider === 'ollama' ? (
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
@@ -1836,7 +1890,7 @@ const SettingsPage = () => {
 
                 <button
                   onClick={saveSettings}
-                  disabled={saving || !settings.ai_model || !settings.transcript_polishing_prompt.trim() || (settings.ai_provider !== 'ollama' && !hasUsableApiKey)}
+                  disabled={saving || !settings.ai_model || !settings.transcript_polishing_prompt.trim() || (!['ollama', 'apple_on_device'].includes(settings.ai_provider) && !hasUsableApiKey)}
                   className="flex items-center space-x-2 px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {saving ? (

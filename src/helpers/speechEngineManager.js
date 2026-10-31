@@ -1,6 +1,8 @@
 const { EventEmitter } = require('node:events');
 const { randomUUID, createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
+const os = require('node:os');
+const { isMacOS27OrNewer } = require('./macos27Support');
 
 class SherpaAdapter {
   constructor(manager) { this.manager = manager; }
@@ -34,10 +36,16 @@ class SherpaAdapter {
 }
 
 class SpeechEngineManager extends EventEmitter {
-  constructor({ database, sherpa, apple, audioStore, textUtilities }) {
+  constructor({ database, sherpa, apple, audioStore, textUtilities, platform = process.platform, arch = process.arch, release = os.release() }) {
     super(); this.database = database; this.sherpa = sherpa; this.apple = apple; this.audioStore = audioStore; this.textUtilities = textUtilities;
+    this.platform = platform;
+    this.macSupported = isMacOS27OrNewer({ platform, arch, release });
     this.adapters = { sherpa: new SherpaAdapter(sherpa), apple };
-    this.selected = database.getSetting('asr_engine', 'sherpa');
+    const savedEngine = database.getSetting('asr_engine', 'sherpa');
+    this.needsEngineMigration = platform === 'darwin' && savedEngine === 'sherpa';
+    // Legacy IPC checks selected before initialize can persist the migration.
+    // It must never see Sherpa selected on a Mac path.
+    this.selected = this.needsEngineMigration ? 'apple' : savedEngine;
     this.profile = database.getSetting('apple_response_profile', 'accurate');
     this.state = 'checking'; this.reason = null; this.generation = 0; this.job = null; this.transition = false;
     sherpa.onRuntimeExit = () => {
@@ -51,7 +59,7 @@ class SpeechEngineManager extends EventEmitter {
     apple.on('runtime-error', code => { if (this.selected === 'apple' && !this.transition && this.state === 'ready') { this.state = 'failed'; this.reason = code; this.publish(); } });
   }
   snapshot() {
-    return { selected: this.selected, activeEngine: this.state === 'ready' ? this.selected : null, profile: this.profile, state: this.job ? 'busy' : this.state, reason: this.reason, progress: this.progress || 0, isReady: this.state === 'ready', busy: !!this.job || this.transition, appleAvailable: !this.apple.supportReason() };
+    return { platform: this.platform, selected: this.selected, activeEngine: this.state === 'ready' ? this.selected : null, profile: this.profile, state: this.job ? 'busy' : this.state, reason: this.reason, progress: this.progress || 0, isReady: this.state === 'ready', busy: !!this.job || this.transition, appleAvailable: this.platform === 'darwin' && this.macSupported && !this.apple.supportReason() };
   }
   async checkState() {
     if (this.selected === 'sherpa' && this.state === 'ready' && !this.job && !this.sherpa.serverReady) { this.state = 'failed'; this.reason = 'sherpa_not_ready'; this.publish(); }
@@ -71,11 +79,29 @@ class SpeechEngineManager extends EventEmitter {
   }
   publish() { const state = this.snapshot(); this.emit('state', state); return state; }
   initialize() { this.preparing = this.prepare(); return this.preparing; }
+  validSelection() {
+    return (this.platform === 'darwin' ? this.selected === 'apple' : this.selected === 'sherpa')
+      && ['accurate', 'responsive', 'dictation'].includes(this.profile);
+  }
+  async migrateEnginePreference() {
+    if (!this.needsEngineMigration) return;
+    if (!this.migratingEngine) this.migratingEngine = (async () => {
+      try {
+        const saved = await this.database.setSetting('asr_engine', 'apple');
+        if (saved === false || saved?.success === false) throw new Error('engine_setting_save_failed');
+        this.needsEngineMigration = false;
+      } catch { throw new Error('engine_setting_save_failed'); }
+    })().finally(() => { this.migratingEngine = null; });
+    await this.migratingEngine;
+  }
   async prepare() {
-    if (!['sherpa', 'apple'].includes(this.selected) || !['accurate', 'responsive', 'dictation'].includes(this.profile)) { this.state = 'failed'; this.reason = 'engine_setting_invalid'; return this.publish(); }
+    if (this.platform === 'darwin' && !this.macSupported) { this.state = 'unavailable'; this.reason = 'platform_unsupported'; return this.publish(); }
+    if (!this.validSelection()) { this.state = 'failed'; this.reason = 'engine_setting_invalid'; return this.publish(); }
     const generation = this.generation;
     this.state = 'preparing'; this.reason = null; this.progress = 0; this.publish();
     try {
+      await this.migrateEnginePreference();
+      if (generation !== this.generation) return this.snapshot();
       const result = await this.adapters[this.selected].prepare(this.profile);
       if (generation !== this.generation) return this.snapshot();
       this.state = result.state; this.reason = result.reason || null;
@@ -86,6 +112,7 @@ class SpeechEngineManager extends EventEmitter {
     if (!['asr_engine', 'apple_response_profile'].includes(key)) throw new Error('engine_setting_invalid');
     if (!(key === 'asr_engine' ? ['sherpa', 'apple'] : ['accurate', 'responsive', 'dictation']).includes(value)) throw new Error('engine_setting_invalid');
     if (this.job || this.transition) throw new Error('speech_busy');
+    if (key === 'asr_engine' && value !== (this.platform === 'darwin' ? 'apple' : 'sherpa')) throw new Error('engine_setting_invalid');
     if (key === 'asr_engine' && value === 'apple' && this.apple.supportReason()) throw new Error(this.apple.supportReason());
     this.transition = true;
     try {
@@ -111,6 +138,9 @@ class SpeechEngineManager extends EventEmitter {
   }
   async install() {
     if (this.job || this.transition) throw new Error('speech_busy');
+    if (this.platform === 'darwin' && !this.macSupported) throw new Error('platform_unsupported');
+    if (!this.validSelection()) throw new Error('engine_setting_invalid');
+    await this.migrateEnginePreference();
     const generation = this.generation;
     if (this.installing) throw new Error('speech_busy');
     this.installing = true; this.state = 'downloading'; this.progress = 0; this.publish();
@@ -125,6 +155,8 @@ class SpeechEngineManager extends EventEmitter {
     this.installing = false; return this.snapshot();
   }
   begin(kind, owner) {
+    if (this.platform === 'darwin' && !this.macSupported) throw new Error('platform_unsupported');
+    if (!this.validSelection()) throw new Error('engine_setting_invalid');
     if (this.selected === 'sherpa' && this.state === 'ready' && !this.sherpa.serverReady) { this.state = 'failed'; this.reason = 'sherpa_not_ready'; this.publish(); }
     if (this.job || this.transition || this.state !== 'ready') throw new Error(this.job || this.transition ? 'speech_busy' : this.reason || 'speech_not_ready');
     if (!['recording', 'streaming', 'file', 'history'].includes(kind)) throw new Error('speech_job_invalid');

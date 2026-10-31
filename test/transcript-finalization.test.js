@@ -107,3 +107,39 @@ test("runtime shutdown 取消結果，不保存也不貼上 fallback", async () 
   assert.equal(result.finalText, null);
   assert.equal(saveCalls, 0);
 });
+
+test('normal and Apple live-preview finalization preserve raw text on provider failure or disable', async () => {
+  const { finalizeTranscript } = await import('../src/utils/transcriptFinalization.mjs');
+  for (const mode of ['offline', 'streaming']) {
+    for (const providerResult of [{ success: false, code: 'timeout' }, { success: false, code: 'provider_unavailable' }, { success: true, text: ' ' }, { success: false, code: 'polishing_disabled' }]) {
+      const saved = []; let calls = 0;
+      const result = await finalizeTranscript({ rawText: '三萬，不是三千五。', polishingEnabled: true, transcriptionData: { mode }, processText: async () => { calls++; return providerResult; }, saveTranscription: async data => { saved.push(data); return { changes: 1 }; } });
+      assert.equal(result.finalText, '三萬，不是三千五。'); assert.equal(result.polished, false);
+      assert.equal(result.issue, providerResult.code === 'polishing_disabled' ? null : '潤稿失敗，已使用原始文字');
+      assert.equal(calls, 1); assert.equal(saved.length, 1); assert.equal(saved[0].raw_text, saved[0].text);
+    }
+  }
+});
+
+test('cancellation before generation or after persistence suppresses final output', async () => {
+  const { finalizeTranscript } = await import('../src/utils/transcriptFinalization.mjs');
+  let saved = 0, generated = 0, cancelled = true;
+  const options = { rawText: '原文', polishingEnabled: true, transcriptionData: {}, isCancelled: () => cancelled, processText: async () => { generated++; return { success: true, text: '候選' }; }, saveTranscription: async () => { saved++; cancelled = true; return { changes: 1 }; } };
+  const early = await finalizeTranscript(options);
+  assert.equal(early.cancelled, true); assert.equal(generated, 0); assert.equal(saved, 0);
+  cancelled = false;
+  const afterSave = await finalizeTranscript(options);
+  assert.equal(afterSave.cancelled, true); assert.equal(afterSave.finalText, null);
+  assert.equal(afterSave.saved, true, 'an already-completed write must not be reported as undone');
+  assert.equal(saved, 1); assert.equal(generated, 1);
+});
+
+test('structured persistence failures retain usable final text but never report saved', async () => {
+  const { finalizeTranscript } = await import('../src/utils/transcriptFinalization.mjs');
+  for (const failure of [false, { success: false }, { changes: 0 }]) {
+    let writes = 0;
+    const result = await finalizeTranscript({ rawText: '原文', polishingEnabled: false, transcriptionData: {}, saveTranscription: async () => { writes++; return failure; } });
+    assert.equal(result.saved, false); assert.equal(result.issue, '歷史紀錄保存失敗');
+    assert.equal(result.finalText, '原文'); assert.equal(writes, 1);
+  }
+});

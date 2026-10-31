@@ -7,7 +7,10 @@ const { promisify } = require('node:util');
 const test = require('node:test');
 const esbuild = require('esbuild');
 
-test('已開啟的設定視窗同步 AI 開關，儲存提示詞不覆寫開關', { timeout: 20000 }, async () => {
+for (const [name, fixtureFile] of [
+  ['已開啟的設定視窗同步 AI 開關，儲存提示詞不覆寫開關', 'ai-settings-ui.js'],
+  ['Apple 設定無 key 與 URL，顯示能力並阻止未就緒啟用', 'apple-polishing-settings-ui.js'],
+]) test(name, { timeout: 20000 }, async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'speakslow-ai-settings-test-'));
   try {
     esbuild.buildSync({
@@ -17,7 +20,7 @@ test('已開啟的設定視窗同步 AI 開關，儲存提示詞不覆寫開關'
       loader: { '.css': 'empty' },
       define: { 'process.env.NODE_ENV': '"production"' },
     });
-    const fixture = fs.readFileSync(path.join(__dirname, 'fixtures/ai-settings-ui.js'), 'utf8');
+    const fixture = fs.readFileSync(path.join(__dirname, 'fixtures', fixtureFile), 'utf8');
     fs.writeFileSync(path.join(directory, 'settings.html'), `<div id="settings-root"></div><pre id="test-result"></pre><script>${fixture}</script>`);
     const browser = process.env.SPEAKSLOW_TEST_BROWSER || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
     const { stdout } = await promisify(execFile)(browser, [

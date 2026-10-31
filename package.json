@@ -11,7 +11,7 @@
     "dev:renderer": "cd src && vite",
     "build": "npm run build:backend && npm run build:renderer && electron-builder",
     "postinstall": "electron-builder install-app-deps",
-    "build:renderer": "node scripts/build-context-helper.mjs && node scripts/build-apple-speech.mjs && cd src && vite build",
+    "build:renderer": "node scripts/build-context-helper.mjs && node scripts/build-apple-speech.mjs && node scripts/build-apple-foundation-models.mjs && node scripts/build-window-visibility.mjs && cd src && vite build",
     "prepare:python": "pip install sherpa-onnx numpy opencc edge-tts pyinstaller && python download_all_models.py",
     "build:backend": "node scripts/build-backend.mjs",
     "build:win": "electron-builder --win",
@@ -21,6 +21,7 @@
     "clean": "node cleanup.js && rm -rf python",
     "build:context": "node scripts/build-context-helper.mjs",
     "build:apple": "node scripts/build-apple-speech.mjs",
+    "build:apple-foundation-models": "node scripts/build-apple-foundation-models.mjs",
     "build:mac": "npm run build:backend && npm run build:renderer && electron-builder --mac",
     "install:mac": "node scripts/install-mac.mjs",
     "build:install:mac": "npm run build:mac -- --publish never && npm run install:mac -- --identity -"
@@ -173,6 +174,7 @@
       "icon": "assets/icon.icns",
       "category": "public.app-category.productivity",
       "identity": null,
+      "minimumSystemVersion": "27.0",
       "artifactName": "${productName}-${arch}.${ext}",
       "target": [
         {
@@ -188,6 +190,14 @@
         {
           "from": "native/build/apple-speech",
           "to": "apple-speech"
+        },
+        {
+          "from": "native/build/apple-foundation-models",
+          "to": "apple-foundation-models"
+        },
+        {
+          "from": "native/build/window-visibility",
+          "to": "window-visibility"
         }
       ]
     }

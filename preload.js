@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // AI文本处理
   processText: (text, mode, options) => ipcRenderer.invoke("process-text", text, mode, options),
+  previewFilePolish: (text) => ipcRenderer.invoke('preview-file-polish', text),
   applyDictionaryWithContext: (text) => ipcRenderer.invoke('apply-dictionary-context', text),
   getEvolutionState: () => ipcRenderer.invoke('evolution-state'),
   getEvolutionApps: () => ipcRenderer.invoke('evolution-apps'),
@@ -104,6 +105,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   finishLatency: (id, outcome) => ipcRenderer.send('latency-finish', id, outcome),
   exportPerformanceStats: () => ipcRenderer.invoke('export-performance-stats'),
   checkAIStatus: (testConfig) => ipcRenderer.invoke("check-ai-status", testConfig),
+  getApplePolishingStatus: () => ipcRenderer.invoke('get-apple-polishing-status'),
   listOllamaModels: () => ipcRenderer.invoke("list-ollama-models"),
   getTranscriptPolishingPrompt: () => ipcRenderer.invoke("get-transcript-polishing-prompt"),
   setTranscriptPolishingPrompt: (prompt) => ipcRenderer.invoke("set-transcript-polishing-prompt", prompt),
@@ -159,7 +161,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   retranscribeTranscription: (id, options) =>
     ipcRenderer.invoke("retranscribe-transcription", id, options),
   previewHistoryPolish: (id) => ipcRenderer.invoke("preview-history-polish", id),
-  applyHistoryPolish: (id, candidateText) => ipcRenderer.invoke("apply-history-polish", id, candidateText),
+  applyHistoryPolish: (id, candidateToken) => ipcRenderer.invoke("apply-history-polish", id, candidateToken),
+  cancelHistoryPolish: () => ipcRenderer.invoke("cancel-history-polish"),
   clearAllTranscriptions: () =>
     ipcRenderer.invoke("clear-all-transcriptions"),
 

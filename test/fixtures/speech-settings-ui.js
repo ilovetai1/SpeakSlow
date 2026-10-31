@@ -1,8 +1,9 @@
-let state = { selected: 'sherpa', profile: 'accurate', state: 'ready', isReady: true, appleAvailable: true, busy: false };
+let state = { platform: window.TEST_SPEECH_PLATFORM, selected: 'sherpa', profile: 'accurate', state: 'ready', isReady: true, appleAvailable: false, busy: false };
 const listeners = new Set(), writes = [];
 let rejectNext = false;
 const publish = patch => { state = { ...state, ...patch }; listeners.forEach(callback => callback(null, state)); };
 window.electronAPI = {
+  getPlatform: () => window.TEST_SPEECH_PLATFORM,
   getSpeechEngineState: async () => state,
   onSpeechEngineState: callback => { listeners.add(callback); return () => listeners.delete(callback); },
   selectSpeechEngine: async (key, value) => {
@@ -20,29 +21,21 @@ const select = (id, value) => { const control = document.getElementById(id); con
 (async () => {
   await wait(() => document.querySelector('#speech-engine'));
   check(document.querySelector('#speech-engine').value === 'sherpa', 'default changed');
+  check(document.querySelector('#speech-engine').options.length === 1, 'non-Mac offers an alternate engine');
+  check(!document.querySelector('option[value="apple"]') && !document.querySelector('#apple-response-profile'), 'non-Mac exposes Apple controls');
   check(writes.length === 0, 'opening settings changed saved preferences');
-  select('speech-engine', 'apple'); await wait(() => document.querySelector('#apple-response-profile'));
-  check(document.querySelector('#apple-response-profile').value === 'accurate', 'Apple default changed');
-  check(writes[0].value === 'apple', 'selection not persisted');
-  select('apple-response-profile', 'responsive'); await wait(() => state.profile === 'responsive');
-  select('apple-response-profile', 'dictation'); await wait(() => state.profile === 'dictation');
-  check(writes.at(-1).key === 'apple_response_profile' && writes.at(-1).value === 'dictation', 'dictation selection not persisted');
-  await wait(() => document.body.textContent.includes('部分測試音訊中會漏字'));
-  check(document.querySelector('option[value="accurate"]').textContent.includes('SpeechTranscriber'), 'SpeechTranscriber was removed');
   publish({ state: 'busy', busy: true }); await wait(() => document.querySelector('#speech-engine').disabled);
-  check(document.querySelector('#apple-response-profile').disabled, 'profile bypasses busy gate');
-  publish({ state: 'ready', busy: false, selected: 'sherpa' }); await wait(() => !document.querySelector('#apple-response-profile'));
-  rejectNext = true; select('speech-engine', 'apple');
+  publish({ state: 'ready', busy: false }); await wait(() => !document.querySelector('#speech-engine').disabled);
+  rejectNext = true; select('speech-engine', 'sherpa');
   await wait(() => document.querySelector('[role="alert"]')?.textContent.includes('無法保存'));
   check(document.querySelector('#speech-engine').value === 'sherpa', 'failed save changed visible selection');
-  publish({ selected: 'apple', state: 'failed', reason: 'locale_unsupported' });
-  await wait(() => document.querySelector('[role="alert"]')?.textContent.includes('台灣繁體中文'));
-  check(state.selected === 'apple', 'failure fell back');
-  publish({ selected: 'apple', state: 'downloading', reason: null, progress: 42 });
-  await wait(() => [...document.querySelectorAll('button')].some(button => button.textContent.includes('停止等待')));
-  [...document.querySelectorAll('button')].find(button => button.textContent.includes('停止等待')).click();
-  await wait(() => state.selected === 'sherpa');
-  publish({ state: 'ready', appleAvailable: false });
-  await wait(() => document.querySelector('option[value="apple"]').disabled);
+  publish({ state: 'downloading', reason: null, progress: 42 });
+  await wait(() => document.querySelector('#root').textContent.includes('42%'));
+  check(!document.querySelector('#root').textContent.includes('Apple'), 'non-Mac displays Apple download behavior');
+  publish({ selected: 'apple', state: 'failed', reason: 'engine_setting_invalid' });
+  await wait(() => document.querySelector('[role="alert"]')?.textContent.includes('設定無效'));
+  check(!document.querySelector('#apple-response-profile'), 'foreign saved Apple preference exposes profile controls');
+  select('speech-engine', 'sherpa'); await wait(() => state.selected === 'sherpa');
+  check(writes.length === 1 && writes[0].value === 'sherpa', 'explicit valid correction was not saved');
   document.querySelector('#test-result').textContent = 'Speech engine UI PASS';
 })().catch(error => { document.querySelector('#test-result').textContent = error.message; });

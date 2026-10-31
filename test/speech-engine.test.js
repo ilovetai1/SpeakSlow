@@ -7,7 +7,7 @@ const { readWav, AppleSpeechManager } = require('../src/helpers/appleSpeechManag
 const { LatencyManager } = require('../src/helpers/latencyManager');
 const TextUtilityService = require('../src/helpers/textUtilityService');
 
-function fixture(initial = {}) {
+function fixture(initial = {}, platform = initial.asr_engine === 'apple' ? 'darwin' : 'linux') {
   const settings = new Map(Object.entries(initial)), calls = [];
   const db = { getSetting: (key, value) => settings.has(key) ? settings.get(key) : value, setSetting(key, value) { settings.set(key, value); return true; } };
   const sherpa = {
@@ -23,7 +23,7 @@ function fixture(initial = {}) {
     async cancel() { calls.push('apple.cancel'); },
     async transcribeAudio() { return { success: true, text: '測試。' }; },
   });
-  const manager = new SpeechEngineManager({ database: db, sherpa, apple, audioStore: {} });
+  const manager = new SpeechEngineManager({ database: db, sherpa, apple, audioStore: {}, platform, arch: 'arm64', release: '26.0.0' });
   return { settings, calls, db, sherpa, apple, manager };
 }
 test('default startup prepares only Sherpa; saved Apple prepares only Apple', async () => {
@@ -45,20 +45,20 @@ test('all job kinds lock selection, profile and new jobs through the whole outpu
 test('failed persistence preserves working engine and emits no new preparation', async () => {
   const f = fixture(); await f.manager.initialize();
   f.db.setSetting = () => { throw new Error('disk_failed'); };
-  await assert.rejects(f.manager.select('asr_engine', 'apple'), /disk_failed/);
+  await assert.rejects(f.manager.select('asr_engine', 'sherpa'), /disk_failed/);
   assert.equal(f.manager.selected, 'sherpa'); assert.equal(f.sherpa.serverReady, true);
   assert.deepEqual(f.calls, ['sherpa.prepare']);
 });
-test('old owned child exits before new prepare; failed Apple retains the new choice', async () => {
+test('old owned child exits before the same supported engine is prepared again', async () => {
   const f = fixture(); await f.manager.initialize();
   const child = new EventEmitter(); child.exitCode = null;
   child.stdin = { end() { f.calls.push('sherpa.exit'); queueMicrotask(() => child.emit('exit', 0)); } };
   f.sherpa.serverProcess = child;
-  f.apple.prepare = async () => { f.calls.push('apple.failed'); throw new Error('locale_unsupported'); };
-  await f.manager.select('asr_engine', 'apple');
-  assert.deepEqual(f.calls, ['sherpa.prepare', 'sherpa.exit', 'apple.failed']);
-  assert.equal(f.manager.snapshot().selected, 'apple'); assert.equal(f.manager.snapshot().state, 'failed');
-  assert.equal(f.settings.get('asr_engine'), 'apple'); assert.equal(f.sherpa.serverReady, false);
+  f.sherpa.preInitializeModels = async () => { f.calls.push('sherpa.failed'); throw new Error('sherpa_not_ready'); };
+  await f.manager.select('asr_engine', 'sherpa');
+  assert.deepEqual(f.calls, ['sherpa.prepare', 'sherpa.exit', 'sherpa.failed']);
+  assert.equal(f.manager.snapshot().selected, 'sherpa'); assert.equal(f.manager.snapshot().state, 'failed');
+  assert.equal(f.settings.get('asr_engine'), 'sherpa'); assert.equal(f.sherpa.serverReady, false);
 });
 test('profiles freeze at job creation and stale or foreign jobs cannot transcribe', async () => {
   const f = fixture({ asr_profile: 'fast' }); await f.manager.initialize();
@@ -160,7 +160,7 @@ test('unexpected Sherpa exit invalidates readiness and prevents acquiring a reco
 test('a historical shutdown reason cannot prevent a later successful explicit switch', async () => {
   const f = fixture(); await f.manager.initialize();
   f.manager.reason = 'engine_shutdown_failed'; f.manager.state = 'failed';
-  const state = await f.manager.select('asr_engine', 'apple');
+  const state = await f.manager.select('asr_engine', 'sherpa');
   assert.equal(state.state, 'ready'); assert.equal(state.reason, null);
 });
 test('WAV parser rejects malformed input, and Apple gate never launches on an unsupported platform', async () => {

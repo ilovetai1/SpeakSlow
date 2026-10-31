@@ -1,0 +1,72 @@
+{
+  "scope": "Native production helper/coordinator, explicit audio fixture, no microphone/user DB/paste; not packaged Electron acceptance.",
+  "environment": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "osRelease": "27.0.0",
+    "osVersion": "Darwin Kernel Version 27.0.0: Tue Aug 11 21:02:59 PDT 2026; root:xnu-13432.1.9~1/RELEASE_ARM64_T8142",
+    "cpu": "Apple M5"
+  },
+  "helper": {
+    "path": "/Users/chunghan/AI/SpeakSlow/native/build/apple-speech",
+    "sha256": "bb22a3624b0e1a483879639edda8474f42029a80c2dfb6d6d846e9864d1ada48"
+  },
+  "audio": {
+    "path": "/Users/chunghan/AI/SpeakSlow/out/apple-engine-product/capture-fixture.wav",
+    "sha256": "974335363a0c89d9a212d6e7a7c4d82214537649e4ebaddbc641ab5b47c41d9a"
+  },
+  "switches": [
+    {
+      "profile": "accurate",
+      "characters": 12,
+      "duration": 10.416
+    },
+    {
+      "profile": "responsive",
+      "characters": 12,
+      "duration": 10.416
+    },
+    {
+      "profile": "dictation",
+      "characters": 11,
+      "duration": 10.416
+    }
+  ],
+  "pair": {
+    "success": true,
+    "results": [
+      {
+        "profile": "accurate",
+        "success": true,
+        "text": "我們的人口結構極速老化。",
+        "duration": 10.416,
+        "timings": {
+          "prepareMs": 36.81979199999978,
+          "firstTextMs": 10521.65925,
+          "audioEndToFinalMs": 283.84037499999977,
+          "inputToFinalMs": 10699.840375,
+          "realtime": true
+        }
+      },
+      {
+        "profile": "dictation",
+        "success": true,
+        "text": "我們的人口結構極速老化",
+        "duration": 10.416,
+        "timings": {
+          "prepareMs": 57.8643749999992,
+          "firstTextMs": 2518.9410420000004,
+          "audioEndToFinalMs": 50.3582920000008,
+          "inputToFinalMs": 10466.358291999999,
+          "realtime": true
+        }
+      }
+    ],
+    "audioSha256": "974335363a0c89d9a212d6e7a7c4d82214537649e4ebaddbc641ab5b47c41d9a",
+    "speechProfile": "accurate",
+    "first": "speech"
+  },
+  "cancellation": "passed",
+  "retry": "passed",
+  "selectedAfter": "dictation"
+}

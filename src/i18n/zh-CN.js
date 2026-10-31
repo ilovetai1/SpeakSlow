@@ -15,6 +15,12 @@ export default {
     exportSrt: '导出 srt',
     outTxt: '逐字稿',
     outSrt: '字幕 SRT',
+    previewPolish: '预览润稿',
+    polishing: '润稿中…',
+    polishCandidate: '润稿候选（确认前不会替换原文）',
+    acceptPolish: '采用候选',
+    resetRaw: '还原原文',
+    polishFailed: '润稿失败，完整原文仍保留。',
   },
   // 应用名称
   appName: '声声慢',
